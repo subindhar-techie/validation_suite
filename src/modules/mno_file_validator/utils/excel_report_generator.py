@@ -29,20 +29,38 @@ class ExcelReportGenerator:
         if not excel_reports:
             raise ValueError("No validation data available for Excel reports")
 
-        parent_name = Path(parent_folder).name  # Folder name only
-
-        excel_filename = f"{parent_name}.xlsx"
+        # Sort excel_reports by batch_number in ascending order
+        try:
+            sorted_reports = sorted(excel_reports, key=lambda x: int(x.get('batch_number', 0)))
+        except (ValueError, TypeError):
+            # If batch_number is not numeric, sort alphabetically
+            sorted_reports = sorted(excel_reports, key=lambda x: str(x.get('batch_number', '')))
+        
+        # Get PO number from the first report to name the file
+        po_number = None
+        for report in excel_reports:
+            po_num = report.get('po_number')
+            if po_num:
+                po_number = po_num
+                break
+        
+        if po_number:
+            excel_filename = f"PO_INPUT_FILE_{po_number}.xlsx"
+        else:
+            parent_name = Path(parent_folder).name  # Fallback to folder name
+            excel_filename = f"{parent_name}.xlsx"
+        
         excel_path = Path(parent_folder) / excel_filename
         
         with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
             # Create Executive Summary sheet
-            self._create_executive_summary(writer, excel_reports)
+            self._create_executive_summary(writer, sorted_reports)
             
             # Create Batch Details sheets
-            self._create_batch_details(writer, excel_reports)
+            self._create_batch_details(writer, sorted_reports)
 
             # Create Error Details sheet
-            self._create_error_details(writer, excel_reports)
+            self._create_error_details(writer, sorted_reports)
         
         return excel_path
 

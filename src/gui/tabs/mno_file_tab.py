@@ -117,6 +117,8 @@ class MNOFileTab:
         
         # Initialize variables
         self.parent_folder = tk.StringVar()
+        self.input_folder = tk.StringVar()
+        self.output_folder = tk.StringVar()
         self.is_loading = False
         
         # Batch counters
@@ -133,9 +135,7 @@ class MNOFileTab:
         try:
             # Use resource_path to find icon in both development and EXE
             possible_paths = [
-                'assets/icons/RTL_logo.ico',
-                'icons/RTL_logo.ico',
-                'RTL_logo.ico',
+                r"D:\Jio_Validation_Suite\assets\icons\RTL_logo.ico",
             ]
             
             print("Searching for icon in following paths:")
@@ -199,7 +199,6 @@ class MNOFileTab:
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=[
-                logging.FileHandler('mno_validation.log', encoding='utf-8'),
                 logging.StreamHandler(stream=sys.stderr)
             ]
         )
@@ -260,18 +259,31 @@ class MNOFileTab:
         folder_frame = ttk.LabelFrame(left_content, text="Project Configuration", padding=15)
         folder_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # Project Folder
-        folder_label = ttk.Label(folder_frame, text="Project Folder:", font=('Arial', 9, 'bold'))
-        folder_label.pack(anchor=tk.W, pady=(0, 8))
+        # INPUT Folder
+        input_label = ttk.Label(folder_frame, text="INPUT Folder (contains .txt files):", font=('Arial', 9, 'bold'))
+        input_label.pack(anchor=tk.W, pady=(0, 8))
         
-        folder_entry_frame = tk.Frame(folder_frame, bg='#ffffff')
-        folder_entry_frame.pack(fill=tk.X, pady=(0, 15))
+        input_entry_frame = tk.Frame(folder_frame, bg='#ffffff')
+        input_entry_frame.pack(fill=tk.X, pady=(0, 15))
         
-        folder_entry = ttk.Entry(folder_entry_frame, textvariable=self.parent_folder, font=('Arial', 9))
-        folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        input_entry = ttk.Entry(input_entry_frame, textvariable=self.input_folder, font=('Arial', 9))
+        input_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
         
-        browse_btn = ttk.Button(folder_entry_frame, text="Browse", command=self.browse_folder, width=8)
-        browse_btn.pack(side=tk.RIGHT)
+        input_browse_btn = ttk.Button(input_entry_frame, text="Browse", command=self.browse_input_folder, width=8)
+        input_browse_btn.pack(side=tk.RIGHT)
+        
+        # OUTPUT Folder
+        output_label = ttk.Label(folder_frame, text="OUTPUT Folder (contains subfolders & report):", font=('Arial', 9, 'bold'))
+        output_label.pack(anchor=tk.W, pady=(0, 8))
+        
+        output_entry_frame = tk.Frame(folder_frame, bg='#ffffff')
+        output_entry_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        output_entry = ttk.Entry(output_entry_frame, textvariable=self.output_folder, font=('Arial', 9))
+        output_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        
+        output_browse_btn = ttk.Button(output_entry_frame, text="Browse", command=self.browse_output_folder, width=8)
+        output_browse_btn.pack(side=tk.RIGHT)
         
         # Chip Type
         chip_label = ttk.Label(folder_frame, text="Chip Type:", font=('Arial', 9, 'bold'))
@@ -446,12 +458,28 @@ class MNOFileTab:
         self.failed_batches.set(failed)
     
     def browse_folder(self):
-        """Browse for parent folder"""
-        folder = filedialog.askdirectory(title="Select Project Folder")
+        """Browse for parent folder (report output location)"""
+        folder = filedialog.askdirectory(title="Select Report Output Folder")
         if folder:
             self.parent_folder.set(folder)
-            self.log_message(f"Project folder selected: {folder}", "info")
+            self.log_message(f"Report output folder selected: {folder}", "info")
             self.update_status("Folder selected", "success")
+    
+    def browse_input_folder(self):
+        """Browse for INPUT folder containing .txt files"""
+        folder = filedialog.askdirectory(title="Select INPUT Folder (contains .txt files)")
+        if folder:
+            self.input_folder.set(folder)
+            self.log_message(f"INPUT folder selected: {folder}", "info")
+            self.update_status("INPUT folder selected", "success")
+    
+    def browse_output_folder(self):
+        """Browse for OUTPUT folder containing subfolders"""
+        folder = filedialog.askdirectory(title="Select OUTPUT Folder (contains subfolders)")
+        if folder:
+            self.output_folder.set(folder)
+            self.log_message(f"OUTPUT folder selected: {folder}", "info")
+            self.update_status("OUTPUT folder selected", "success")
     
     def update_status(self, message, status_type="info"):
         """Update status indicator"""
@@ -511,14 +539,23 @@ class MNOFileTab:
     
     def start_comparison(self):
         """Start validation process - USING ACTUAL VALIDATION NOW"""
-        project_folder = self.parent_folder.get()
+        input_folder = self.input_folder.get()
+        output_folder = self.output_folder.get()
 
-        if not project_folder:
-            messagebox.showerror("Error", "Please select a project folder.")
+        if not input_folder:
+            messagebox.showerror("Error", "Please select an INPUT folder.")
             return
         
-        if not Path(project_folder).exists():
-            messagebox.showerror("Error", "Selected folder does not exist.")
+        if not output_folder:
+            messagebox.showerror("Error", "Please select an OUTPUT folder.")
+            return
+        
+        if not Path(input_folder).exists():
+            messagebox.showerror("Error", "Selected INPUT folder does not exist.")
+            return
+        
+        if not Path(output_folder).exists():
+            messagebox.showerror("Error", "Selected OUTPUT folder does not exist.")
             return
         
         try:
@@ -532,7 +569,8 @@ class MNOFileTab:
             self.log_message("=" * 50, "info")
             self.log_message("STARTING VALIDATION PROCESS", "info")
             self.log_message("=" * 50, "info")
-            self.log_message(f"Project Folder: {project_folder}", "info")
+            self.log_message(f"INPUT Folder: {input_folder}", "info")
+            self.log_message(f"OUTPUT Folder: {output_folder}", "info")
             self.log_message(f"Chip Type: {self.chip_type.get()}", "info")
             self.log_message("-" * 50, "info")
             
@@ -540,8 +578,8 @@ class MNOFileTab:
             self.comparator.set_log_callback(self.log_message)
             self.comparator.set_chip_type(self.chip_type.get())
             
-            # Run validation - ACTUAL VALIDATION
-            success_count, failure_count = self.comparator.run_validation(project_folder)
+            # Run validation - ACTUAL VALIDATION (pass both input and output folders)
+            success_count, failure_count = self.comparator.run_validation(output_folder, input_folder, output_folder)
             
             # Update counters
             total = success_count + failure_count
@@ -567,17 +605,17 @@ class MNOFileTab:
     
     def generate_excel_report(self):
         """Generate Excel report automatically - ACTUAL REPORT GENERATION"""
-        project_folder = self.parent_folder.get()
+        output_folder = self.output_folder.get()
 
-        if not project_folder:
-            messagebox.showwarning("Report", "Please select a project folder first.")
+        if not output_folder:
+            messagebox.showwarning("Report", "Please select an OUTPUT folder first.")
             return
         
         try:
             self.log_message("Starting Excel report generation...", "info")
 
             # Generate report - ACTUAL REPORT GENERATION
-            excel_path = self.comparator.generate_excel_reports(project_folder)
+            excel_path = self.comparator.generate_excel_reports(output_folder)
 
             self.log_message(f"Excel report generated: {excel_path}", "success")
             self.update_status("Excel report ready", "success")

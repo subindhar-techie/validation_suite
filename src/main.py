@@ -91,7 +91,7 @@ except ImportError:
         base_path = getattr(sys, '_MEIPASS', project_root)
         return os.path.join(base_path, relative_path)
     
-    def find_icon(icon_name="RTL_logo.ico"):
+    def find_icon(icon_name=r"D:\Jio_Validation_Suite\assets\icons\RTL_logo.ico"):
         possible_paths = [
             f"assets/icons/{icon_name}",
             f"icons/{icon_name}",

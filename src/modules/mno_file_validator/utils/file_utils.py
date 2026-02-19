@@ -2,9 +2,9 @@
 Utility functions for file operations
 """
 import re
+import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
-import logging
 
 def parse_filename(filename: str) -> Optional[Dict]:
     """Extract components from filename"""
@@ -25,7 +25,7 @@ def parse_filename(filename: str) -> Optional[Dict]:
     return None
 
 def find_matching_files(parent_folder: str) -> List[Dict]:
-    """Find and match IN files with corresponding OUT folders"""
+    """Find and match IN files with corresponding OUT folders (Legacy - single folder)"""
     parent_path = Path(parent_folder)
     
     if not parent_path.exists():
@@ -53,23 +53,74 @@ def find_matching_files(parent_folder: str) -> List[Dict]:
     
     return matches
 
+def find_matching_files_new(input_folder: str, output_folder: str) -> List[Dict]:
+    """Find and match IN files with corresponding OUT folders (New - separate folders)"""
+    input_path = Path(input_folder)
+    output_path = Path(output_folder)
+    
+    if not input_path.exists():
+        raise FileNotFoundError(f"INPUT folder does not exist: {input_folder}")
+    
+    if not output_path.exists():
+        raise FileNotFoundError(f"OUTPUT folder does not exist: {output_folder}")
+    
+    # Find all IN_*.txt files in input folder
+    in_files = sorted(input_path.glob("IN_*.txt"))
+    
+    # Find all OUT_* subfolders in output folder
+    out_folders = sorted([f for f in output_path.iterdir() if f.is_dir() and f.name.startswith("OUT_")])
+    
+    matches = []
+    matched_out_indices = set()
+    
+    for in_file in in_files:
+        in_suffix = in_file.stem[3:]
+        
+        for idx, out_folder in enumerate(out_folders):
+            if idx in matched_out_indices:
+                continue
+            
+            out_suffix = out_folder.name[4:]
+            
+            if in_suffix == out_suffix:
+                matches.append({
+                    'in_file': in_file,
+                    'out_folder': out_folder,
+                    'suffix': in_suffix
+                })
+                matched_out_indices.add(idx)
+                break
+    
+    return matches
+
 def find_output_files(out_folder: Path, suffix: str) -> Dict:
     """Find output files with various extensions"""
     output_files = {}
     
     file_patterns = {
-        'CNUM': [f"CNUM_{suffix}.txt", f"CNUM_{suffix}.TXT", f"CNUM_{suffix}"],
-        'ORIG_TRIG': [f"ORIG_TRIG_{suffix}.txt", f"ORIG_TRIG_{suffix}.TXT", f"ORIG_TRIG_{suffix}"],
-        'SCM': [f"SCM_{suffix}.txt", f"SCM_{suffix}.TXT", f"SCM_{suffix}"],
-        'SIMODA': [f"SIMODA_{suffix}.cps", f"SIMODA_{suffix}.CPS", f"SIMODA_{suffix}.txt", f"SIMODA_{suffix}.TXT", f"SIMODA_{suffix}"]
+        'CNUM': f"CNUM_{suffix}.txt",
+        'ORIG_TRIG': f"ORIG_TRIG_{suffix}.txt",
+        'SCM': f"SCM_{suffix}.txt",
+        'SIMODA': f"SIMODA_{suffix}.cps"
     }
     
-    for file_type, patterns in file_patterns.items():
+    # Get all files in folder as strings for comparison
+    all_files_in_folder = [f.name for f in out_folder.iterdir()]
+    
+    for file_type, pattern in file_patterns.items():
+        # Check directly in the out_folder using filename comparison
+        if pattern in all_files_in_folder:
+            # Use os.path.join for Windows-compatible path
+            file_path = os.path.join(str(out_folder), pattern)
+            output_files[file_type] = Path(file_path)
+            continue
+            
+        # Check recursively in subdirectories
         found = False
-        for pattern in patterns:
-            potential_file = out_folder / pattern
-            if potential_file.exists():
-                output_files[file_type] = potential_file
+        for root, dirs, files in os.walk(out_folder):
+            if pattern in files:
+                file_path = os.path.join(str(root), pattern)
+                output_files[file_type] = Path(file_path)
                 found = True
                 break
         if not found:
@@ -101,7 +152,6 @@ def extract_header_info(file_path: Path) -> Dict:
         
         return info
     except Exception as e:
-        logging.error(f"Error extracting header info from {file_path}: {str(e)}")
         return {}
 
 def validate_quantity(file_path: Path, expected_data_lines: int, header_lines: int = 0) -> Tuple[bool, str]:

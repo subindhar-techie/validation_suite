@@ -27,7 +27,7 @@ from .data_field_validator import DataFieldValidator
 from .scm_validator import SCMValidator
 from ..utils.excel_report_generator import ExcelReportGenerator
 from ..utils.file_utils import (
-    parse_filename, find_matching_files, find_output_files,
+    parse_filename, find_matching_files, find_matching_files_new, find_output_files,
     extract_header_info, validate_quantity
 )
 
@@ -66,9 +66,27 @@ class MNOFileComparator(BaseValidator):
         self.scm_validator.clear_tracking()
         self.excel_reports.clear()
     
-    def run_validation(self, parent_folder: str) -> Tuple[int, int]:
-        """Run the complete validation process"""
-        matches = find_matching_files(parent_folder)
+    def run_validation(self, parent_folder: str, input_folder: str = None, output_folder: str = None) -> Tuple[int, int]:
+        """Run the complete validation process
+        
+        Args:
+            parent_folder: Path where the final report will be saved
+            input_folder: Path to folder containing IN_*.txt files (optional, for new structure)
+            output_folder: Path to folder containing OUT_* subfolders (optional, for new structure)
+            
+        Returns:
+            Tuple of (success_count, failure_count)
+        """
+        # Clear previous reports to avoid duplicates
+        self.excel_reports.clear()
+        
+        # Use new matching function if input_folder and output_folder are provided
+        if input_folder and output_folder:
+            matches = find_matching_files_new(input_folder, output_folder)
+        else:
+            # Fall back to legacy single-folder matching
+            matches = find_matching_files(parent_folder)
+            
         self.log(f"Found {len(matches)} IN file and OUT folder pairs")
         
         if not matches:
@@ -106,6 +124,11 @@ class MNOFileComparator(BaseValidator):
                         
             # Find output files
             output_files = find_output_files(match['out_folder'], match['suffix'])
+            
+            # Debug: print what we found
+            print(f"DEBUG: Looking for files with suffix: {match['suffix']}")
+            print(f"DEBUG: Out folder: {match['out_folder']}")
+            print(f"DEBUG: Files found: {output_files}")
             
             # Check for missing files
             missing_files = [

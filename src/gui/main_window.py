@@ -56,15 +56,14 @@ class MainWindow:
         """Get the absolute path to the application icon"""
         try:
             from runtime_hook import resource_path
-            icon_path = resource_path('assets/icons/RTL_logo.ico')
+            icon_path = r"D:\Jio_Validation_Suite\assets\icons\RTL_logo.ico"
             if os.path.exists(icon_path):
                 return icon_path
             # Fallback path logic
             current_dir = os.path.dirname(__file__)
             # Try finding it relative to src
             possible_paths = [
-                os.path.join(current_dir, '..', '..', 'assets', 'icons', 'RTL_logo.ico'),
-                os.path.join(current_dir, '..', 'assets', 'icons', 'RTL_logo.ico')
+                r"D:\Jio_Validation_Suite\assets\icons\RTL_logo.ico",
             ]
             for path in possible_paths:
                  if os.path.exists(path):

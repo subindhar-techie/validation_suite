@@ -1,0 +1,2 @@
+dist/Jio_Validation_Suite.exe filter=lfs diff=lfs merge=lfs -text
+build/Jio_Validation_Suite/Jio_Validation_Suite.pkg filter=lfs diff=lfs merge=lfs -text

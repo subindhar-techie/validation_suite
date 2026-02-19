@@ -830,8 +830,6 @@ class FirstCardTab:
         """Get the absolute path to the application icon"""
         icon_paths = [
             r"D:\Jio_Validation_Suite\assets\icons\RTL_logo.ico",
-            resource_path('assets/icons/Reliance_Jio_Logo.ico'),
-            resource_path('assets/icons/RTL_logo.ico')
         ]
         
         for path in icon_paths:
