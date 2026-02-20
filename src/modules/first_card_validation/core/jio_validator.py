@@ -225,29 +225,23 @@ def validate_jio_label(label_type, label_data, scm_reader, gui_circle=None):
     # Check 2: Check SCM Gap (Continuity) - DISABLED per user request
     # We now use the scanned values directly without validating SCM continuity
     # This ensures the label values are used as-is without requiring consecutive records
+    # USER REQUEST: Removed swap detection logic - use ICCIDs as scanned without validating order
+    # We now use the scanned values directly without checking if they're swapped
     if iccid_end and start_idx != -1 and end_idx != -1:
         actual_scm_gap = end_idx - start_idx + 1
         
-        # Validate: Start should be before End in SCM (start_idx < end_idx)
-        if start_idx > end_idx:
-            # ICCIDs are swapped - Start is after End in SCM
-            results["field_status"]["ICCID Start"] = "FAIL"
+        # Check if QTY matches the count between Start and End ICCID (without checking swap)
+        if actual_scm_gap != expected_qty:
+            # Count mismatch between label QTY and SCM records
             results["field_status"]["ICCID End"] = "FAIL"
             results["field_status"]["QTY"] = "FAIL"
-            results["details"].append("ICCID Start/End appear to be swapped (Start ICCID comes after End in SCM)")
+            missing_count = expected_qty - actual_scm_gap
+            results["details"].append(f"QTY: ICCID Present but {missing_count} Data Missing (Expected: {expected_qty}, Found: {actual_scm_gap})")
+            results["status"] = "FAIL"
         else:
-            # Check if QTY matches the count between Start and End ICCID
-            if actual_scm_gap != expected_qty:
-                # Count mismatch between label QTY and SCM records
-                results["field_status"]["ICCID End"] = "FAIL"
-                results["field_status"]["QTY"] = "FAIL"
-                missing_count = expected_qty - actual_scm_gap
-                results["details"].append(f"QTY: ICCID Present but {missing_count} Data Missing (Expected: {expected_qty}, Found: {actual_scm_gap})")
-                results["status"] = "FAIL"
-            else:
-                # QTY matches
-                results["field_status"]["ICCID End"] = "PASS"
-                results["field_status"]["QTY"] = "PASS"
+            # QTY matches
+            results["field_status"]["ICCID End"] = "PASS"
+            results["field_status"]["QTY"] = "PASS"
     elif iccid_end and (start_idx == -1 or end_idx == -1):
         # Both or one ICCID not found in SCM - still fail
         if start_idx == -1:
@@ -503,31 +497,24 @@ def validate_outer_label_5000(label_data, scm_reader, gui_circle=None):
     # Dynamic expected_qty for continuity check
     expected_qty = label_batch_qty
     
-    # Check 2: Check SCM Gap (Continuity) - Verify QTY by counting records between Start and End ICCID
+    # USER REQUEST: Removed swap detection logic - use ICCIDs as scanned without validating order
+    # Check SCM Gap (Continuity) - Verify QTY by counting records between Start and End ICCID
     actual_scm_gap = expected_qty # Default
     if start_idx != -1 and end_idx != -1:
         actual_scm_gap = end_idx - start_idx + 1
         
-        # Validate: Start should be before End in SCM (start_idx < end_idx)
-        if start_idx > end_idx:
-            # ICCIDs are swapped - Start is after End in SCM
-            results["field_status"]["ICCID Start"] = "FAIL"
+        # Check if QTY matches the count between Start and End ICCID (without checking swap)
+        if actual_scm_gap != expected_qty:
+            # Count mismatch between label QTY and SCM records
             results["field_status"]["ICCID End"] = "FAIL"
             results["field_status"]["QTY"] = "FAIL"
-            results["details"].append("ICCID Start/End appear to be swapped (Start ICCID comes after End in SCM)")
+            missing_count = expected_qty - actual_scm_gap
+            results["details"].append(f"QTY: ICCID Present but {missing_count} Data Missing (Expected: {expected_qty}, Found: {actual_scm_gap})")
+            results["status"] = "FAIL"
         else:
-            # Check if QTY matches the count between Start and End ICCID
-            if actual_scm_gap != expected_qty:
-                # Count mismatch between label QTY and SCM records
-                results["field_status"]["ICCID End"] = "FAIL"
-                results["field_status"]["QTY"] = "FAIL"
-                missing_count = expected_qty - actual_scm_gap
-                results["details"].append(f"QTY: ICCID Present but {missing_count} Data Missing (Expected: {expected_qty}, Found: {actual_scm_gap})")
-                results["status"] = "FAIL"
-            else:
-                # QTY matches
-                results["field_status"]["ICCID End"] = "PASS"
-                results["field_status"]["QTY"] = "PASS"
+            # QTY matches
+            results["field_status"]["ICCID End"] = "PASS"
+            results["field_status"]["QTY"] = "PASS"
     elif iccid_end:
         # One or both records missing from SCM - still fail
         if start_idx == -1:

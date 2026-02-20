@@ -1043,6 +1043,23 @@ def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=No
                         value = content.split('>')[-1].strip()
                         if value and not value.startswith('<'):
                             return value
+                
+                # NEW: Handle case where value comes AFTER the closing tag like: </MSN1><URT00001234871A001
+                # This is the pattern: </TAG><value_without_any_tag
+                next_match = re.search(r'</' + search_tag + r'>\s*([^<]+)', bc, re.IGNORECASE)
+                if next_match:
+                    value = next_match.group(1).strip()
+                    if value and not value.startswith('<'):
+                        return value
+                
+                # NEW: Handle case where value comes BEFORE closing tag (missing opening tag): <value</MSN1>
+                # This is the pattern: <value_without_tag<TAG> or <value</TAG>
+                before_match = re.search(r'<([^>]+)</' + search_tag + r'>', bc, re.IGNORECASE)
+                if before_match:
+                    value = before_match.group(1).strip()
+                    # Make sure it's not another tag
+                    if value and not value.startswith('<') and '>' not in value:
+                        return value
 
         # --- SMART MAPPING (Other Fields) ---
         
@@ -1157,6 +1174,20 @@ def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=No
         raw_data = label_qr_data.get(section, {})
         keys = [k for k in raw_data.keys() if k not in ["RAW_BARCODES", "BARCODE_DATA"]]
         raw_barcodes = raw_data.get("RAW_BARCODES", [])
+        
+        # DEBUG: Check what fields we need to extract for each section
+        if section == "OUTER LABEL 5000":
+            print(f"[DEBUG] {section} keys (from raw_data): {keys}")
+        
+        # DEBUG: Print fields detected for each section
+        if section == "OUTER LABEL 5000":
+            print(f"[DEBUG] OUTER LABEL 5000 keys: {keys}")
+            print(f"[DEBUG] OUTER LABEL 5000 raw_barcodes count: {len(raw_barcodes)}")
+            print(f"[DEBUG] OUTER LABEL 5000 raw_data keys: {list(raw_data.keys())}")
+            if raw_barcodes:
+                print(f"[DEBUG] All raw_barcodes for OUTER LABEL 5000:")
+                for i, bc in enumerate(raw_barcodes):
+                    print(f"  [{i}] {bc[:150]}")
         
         # User Request: If no label data (barcodes) and no circle input, skip section
         if not keys and not raw_barcodes and not (circle_value and str(circle_value).strip()):
@@ -1306,6 +1337,50 @@ def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=No
     # USER REQUEST: If OUTER LABEL 5000 fails (e.g. Count Mismatch), propagate to other labels
     global_outer_count_fail = False
     
+    # ============================================================
+    # USER REQUEST: Extract reference values from Inner Label 500
+    # These will be used to validate Inner Label 100
+    # ============================================================
+    inner_label_500_reference = {
+        "iccid_start": None,
+        "sku_code": None,
+        "ean": None,
+        "po": None
+    }
+    
+    # Get Inner Label 500 data for cross-reference
+    if "INNER LABEL 500" in label_qr_data:
+        inner_500_data = label_qr_data.get("INNER LABEL 500", {})
+        inner_500_raw_barcodes = inner_500_data.get("RAW_BARCODES", [])
+        
+        # Extract ICCID Start from Inner Label 500
+        for f in ["ICCID Start", "ICCIDSTART", "ICCID_START"]:
+            if f in inner_500_data and inner_500_data[f]:
+                inner_label_500_reference["iccid_start"] = str(inner_500_data[f]).strip()
+                break
+            # Try from raw barcodes
+            for bc in inner_500_raw_barcodes:
+                if bc.startswith("8991") and len(bc) >= 18:
+                    inner_label_500_reference["iccid_start"] = bc.strip()
+                    break
+        
+        # Extract SKU Code/EAN from Inner Label 500
+        for f in ["SKU Code", "SKUCODE", "EAN"]:
+            if f in inner_500_data and inner_500_data[f]:
+                val = str(inner_500_data[f]).strip()
+                if "SKU" in f.upper():
+                    inner_label_500_reference["sku_code"] = val
+                elif "EAN" in f.upper():
+                    inner_label_500_reference["ean"] = val
+        
+        # Extract PO from Inner Label 500
+        for f in ["PO", "PONO"]:
+            if f in inner_500_data and inner_500_data[f]:
+                inner_label_500_reference["po"] = str(inner_500_data[f]).strip()
+                break
+        
+        print(f"[INFO] Inner Label 500 Reference - ICCID Start: {inner_label_500_reference['iccid_start']}, SKU: {inner_label_500_reference['sku_code']}, EAN: {inner_label_500_reference['ean']}, PO: {inner_label_500_reference['po']}")
+    
     if scm_reader and "OUTER LABEL 5000" in label_qr_data:
         # print("[GLOBAL] Pre-validating Outer Label for failure propagation...")
         outer_raw_data = label_qr_data.get("OUTER LABEL 5000", {})
@@ -1388,6 +1463,8 @@ def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=No
         section_validation = {"status": "PASS", "field_status": {}, "details": []}
         if scm_reader and section_title in ["INNER LABEL 100", "INNER LABEL 500", "OUTER LABEL 5000", "ARTWORK FRONT", "ARTWORK BACK", "ARTWORK"]:
             current_section_data = {}
+            
+            # First, populate current_section_data with resolved field values
             for f in fields:
                 v = resolve_field_value(f, section_data_raw, raw_barcodes, iccid_barcodes, section_title, set())
                 # Normalize keys for validator
@@ -1409,6 +1486,38 @@ def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=No
                     # Preserve suffix if it's like PID1, PID2 etc
                     validator_key = norm_f if any(c.isdigit() for c in norm_f) else "PID"
                 current_section_data[validator_key] = v
+            
+            # ============================================================
+            # USER REQUEST: Inner Label 100 Cross-Reference Logic
+            # Get ICCID Start from Inner Label 500 and ALWAYS use it as ICCID Start
+            # This MUST run BEFORE the debug section to avoid being overwritten
+            # ============================================================
+            if section_title == "INNER LABEL 100" and inner_label_500_reference.get("iccid_start"):
+                reference_iccid = inner_label_500_reference["iccid_start"]
+                reference_sku = inner_label_500_reference.get("sku_code")
+                reference_ean = inner_label_500_reference.get("ean")
+                reference_po = inner_label_500_reference.get("po")
+                
+                print(f"[INFO] Inner Label 100 Cross-Reference: Using ICCID {reference_iccid} from Inner Label 500 as START")
+                
+                # ALWAYS set the ICCID from Inner Label 500 as ICCID Start
+                current_section_data["ICCID Start"] = reference_iccid
+                
+                # Find the OTHER ICCID in Inner Label 100 (not the matched one) for ICCID End
+                all_iccids_in_100 = []
+                ref_clean = re.sub(r'\D', '', str(reference_iccid))[:20]
+                
+                for bc in raw_barcodes:
+                    bc_clean = re.sub(r'\D', '', str(bc))[:20]
+                    if bc_clean.startswith("8991") and len(bc_clean) >= 18:
+                        if bc_clean != ref_clean:
+                            all_iccids_in_100.append(bc.strip())
+                
+                if all_iccids_in_100:
+                    current_section_data["ICCID End"] = all_iccids_in_100[0]
+                    print(f"[INFO] Inner Label 100 ICCID End set to: {all_iccids_in_100[0]}")
+                else:
+                    current_section_data["ICCID End"] = ""
 
             # USER REQUEST: Debug printing for ALL labels showing Scanned vs Logic
             if section_title in ["INNER LABEL 100", "INNER LABEL 500", "OUTER LABEL 5000"]:
@@ -1460,6 +1569,60 @@ def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=No
             start_iccid = current_section_data.get("ICCID Start", "Unknown")
             # print(f"[SCAN] Validating {section_title} against SCM (Starting ICCID: {start_iccid})...")
             
+            # ============================================================
+            # USER REQUEST: Inner Label 100 Cross-Reference Logic
+            # Get ICCID Start from Inner Label 500 and ALWAYS use it as ICCID Start in Inner Label 100
+            # Inner Label 100 has only barcode values without tags, so we need to identify
+            # the starting ICCID by matching with Inner Label 500
+            # ============================================================
+            if section_title == "INNER LABEL 100" and inner_label_500_reference.get("iccid_start"):
+                reference_iccid = inner_label_500_reference["iccid_start"]
+                reference_sku = inner_label_500_reference.get("sku_code")
+                reference_ean = inner_label_500_reference.get("ean")
+                reference_po = inner_label_500_reference.get("po")
+                
+                print(f"[INFO] Inner Label 100 Cross-Reference: Using ICCID {reference_iccid} from Inner Label 500 as START")
+                
+                # ALWAYS set the ICCID from Inner Label 500 as ICCID Start
+                # This is the authoritative reference value
+                current_section_data["ICCID Start"] = reference_iccid
+                
+                # Find the OTHER ICCID in Inner Label 100 (not the matched one) for ICCID End
+                # Search through raw barcodes to find ICCIDs
+                all_iccids_in_100 = []
+                ref_clean = re.sub(r'\D', '', str(reference_iccid))[:20]
+                
+                for bc in raw_barcodes:
+                    bc_clean = re.sub(r'\D', '', str(bc))[:20]
+                    # Check if this is a valid ICCID (starts with 8991 and ~20 digits)
+                    if bc_clean.startswith("8991") and len(bc_clean) >= 18:
+                        # Skip the reference ICCID, add the others
+                        if bc_clean != ref_clean:
+                            all_iccids_in_100.append(bc.strip())
+                
+                # If we found another ICCID, use it as ICCID End
+                if all_iccids_in_100:
+                    # Take the first other ICCID found (should be only 1 for Inner Label 100)
+                    current_section_data["ICCID End"] = all_iccids_in_100[0]
+                    print(f"[INFO] Inner Label 100 ICCID End set to: {all_iccids_in_100[0]}")
+                else:
+                    # Clear the ICCID End if no other ICCID found
+                    current_section_data["ICCID End"] = ""
+                
+                # Cross-check SKU Code and EAN with Inner Label 500
+                # If Inner Label 100 has different SKU/EAN, flag as issue
+                current_sku = current_section_data.get("EAN") or current_section_data.get("SKU Code") or current_section_data.get("SKUCODE")
+                current_ean = current_section_data.get("EAN")
+                
+                # Check if SKU/EAN matches reference
+                if reference_sku and current_sku and reference_sku != current_sku:
+                    print(f"[WARN] Inner Label 100 SKU Mismatch: Label={current_sku}, Reference={reference_sku}")
+                    # Add to validation details (will be handled below)
+                
+                if reference_ean and current_ean and reference_ean != current_ean:
+                    print(f"[WARN] Inner Label 100 EAN Mismatch: Label={current_ean}, Reference={reference_ean}")
+                    # Add to validation details (will be handled below)
+            
             # CRITICAL: Store original scanned ICCID values BEFORE validation
             # These values must be displayed exactly as scanned, without any swapping or modification
             import copy
@@ -1471,6 +1634,38 @@ def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=No
             else:
                 label_qty = "100" if "100" in section_title else "500" if "500" in section_title else "1"
                 section_validation = validate_jio_label(label_qty, copy.deepcopy(current_section_data), scm_reader, gui_circle=circle_value)
+            
+            # ============================================================
+            # USER REQUEST: Add cross-reference validation results for Inner Label 100
+            # Check if SKU/EAN matches Inner Label 500 reference
+            # ============================================================
+            if section_title == "INNER LABEL 100" and inner_label_500_reference.get("iccid_start"):
+                reference_sku = inner_label_500_reference.get("sku_code")
+                reference_ean = inner_label_500_reference.get("ean")
+                reference_po = inner_label_500_reference.get("po")
+                
+                # Check EAN match
+                current_ean = current_section_data.get("EAN")
+                if reference_ean and current_ean and reference_ean != current_ean:
+                    section_validation["field_status"]["EAN"] = "FAIL"
+                    section_validation["status"] = "FAIL"
+                    section_validation["details"].append(f"EAN Mismatch with Inner Label 500: Label={current_ean}, Inner500={reference_ean}")
+                
+                # Check SKU Code (could be in EAN field or separate)
+                current_sku = current_section_data.get("EAN")  # Sometimes SKU is in EAN field
+                if reference_sku and current_sku and reference_sku != current_sku:
+                    # Also check if EAN matches
+                    if not (current_ean and reference_ean and current_ean == reference_ean):
+                        section_validation["field_status"]["SKU Code"] = "FAIL"
+                        section_validation["status"] = "FAIL"
+                        section_validation["details"].append(f"SKU Code Mismatch with Inner Label 500: Label={current_sku}, Inner500={reference_sku}")
+                
+                # Check PO match
+                current_po = current_section_data.get("PO")
+                if reference_po and current_po and reference_po != current_po:
+                    section_validation["field_status"]["PO"] = "FAIL"
+                    section_validation["status"] = "FAIL"
+                    section_validation["details"].append(f"PO Mismatch with Inner Label 500: Label={current_po}, Inner500={reference_po}")
             
             # Restore original scanned values for report
             if original_iccid_start:

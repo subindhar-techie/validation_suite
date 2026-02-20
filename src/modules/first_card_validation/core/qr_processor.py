@@ -44,6 +44,10 @@ except Exception as e:
     pyzbar = None
 
 def clean_xml_string(xml_str):
+    # Fix malformed XML: <VALUE</TAG> -> <TAG>VALUE</TAG>
+    # Example: <URT00001234871A001</MSN1> -> <MSN1>URT00001234871A001</MSN1>
+    xml_str = re.sub(r'<([^<>]+)</(\w+)>', r'<\2>\1</\2>', xml_str)
+    
     xml_str = re.sub(r'<(/?)(\w+)\s+(\w+)>', r'<\1\2_\3>', xml_str)
     xml_str = re.sub(r'<\?xml.*?\?>', '', xml_str)
     xml_str = re.sub(r'<!--.*?-->', '', xml_str)
@@ -76,12 +80,17 @@ def process_qr_code_wbiot(image_path):
                             data = barcode.data.decode('utf-8')
                             if not data: continue
                             
+                            # Check if this is a long XML barcode
+                            if len(data) > 100:
+                                log_debug(f"FOUND LONG XML: {method_name} - length={len(data)}, data: {data[:200]}")
                             all_raw_barcodes.add(data)
-                            log_debug(f"FOUND: {method_name} - pyzbar found: {data}")
+                            if len(data) > 100:
+                                log_debug(f"FOUND FULL: {method_name} - full XML: {data}")
                             
                             if '<' in data and '>' in data:
                                 try:
                                     xml_data = clean_xml_string(data)
+                                    log_debug(f"CLEANED XML: {xml_data[:200]}...")
                                     root = ET.fromstring(xml_data)
                                     # Create a section for this specific barcode's tags
                                     tag_entry = {}
@@ -113,6 +122,7 @@ def process_qr_code_wbiot(image_path):
                 if '<' in data and '>' in data:
                     try:
                         xml_data = clean_xml_string(data)
+                        log_debug(f"CLEANED XML (OpenCV): {xml_data[:200]}...")
                         root = ET.fromstring(xml_data)
                         tag_entry = {}
                         for child in root:
