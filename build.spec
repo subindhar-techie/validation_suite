@@ -66,5 +66,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets/icons/Reliance_Jio_Logo.ico',
+    icon='assets/icons/RTL_logo.ico',
 )
