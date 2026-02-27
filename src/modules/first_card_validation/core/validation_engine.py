@@ -383,7 +383,7 @@ class ValidationEngine:
     def __init__(self):
         self.results = {}
 
-def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=None, image_paths=None, circle_value=None):
+def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=None, image_paths=None, circle_value=None, perso_script_path=None):
     
     print("Running with:", profile_type, filepath)
 
@@ -685,8 +685,21 @@ def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=No
     headers = ["Field", "Machine Log", "PCOM", "CNUM", "SCM", "SIM ODA", 
                "PCOM Status", "CNUM Status", "SCM Status", "SIM_ODA Status", "Validation Status"]
     
-    # Setup Excel headers and metadata
-    setup_excel_headers(ws, styles)
+    # Setup Excel headers and metadata with Final Verification Report Card values
+    # Get folder path from machine log file
+    folder_path = os.path.dirname(filepath) if filepath else ""
+    
+    setup_excel_headers(
+        ws, styles, 
+        operator_name="JIO",
+        folder_path=folder_path,
+        scm_path=scm_path,
+        sim_oda_path=sim_oda_path,
+        circle_value=circle_value,
+        validation_errors=validation_errors,
+        cnum_path=cnum_path,
+        perso_script_path=perso_script_path
+    )
 
     header_row = 16  # Row 18 will now contain your table headers
            
@@ -1795,6 +1808,9 @@ def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=No
         ws.column_dimensions[col_letter].width = max_len + 8
 
     # --- Save Report ---
+    
+    # Update Final Verification Status after all validation is complete
+    update_final_verification_status(ws, validation_errors)
 
     # Extract ICCID for filename (from SCM or Machine Log)
     iccid = file_values.get("ICCID_CARD (2FE2)", {}).get("SCM")

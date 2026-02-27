@@ -45,6 +45,7 @@ class MNOFileComparator(BaseValidator):
         self.scm_validator = SCMValidator()
         self.simoda_validator = SIMODAValidator()
         self.excel_generator = ExcelReportGenerator()
+        self.progress_callback = None
     
     def set_log_callback(self, callback: Callable):
         """Set the logging callback for all validators"""
@@ -53,6 +54,10 @@ class MNOFileComparator(BaseValidator):
         self.data_field_validator.set_log_callback(callback)
         self.scm_validator.set_log_callback(callback)
         self.simoda_validator.set_log_callback(callback)
+    
+    def set_progress_callback(self, callback: Callable):
+        """Set the progress callback for tracking validation progress"""
+        self.progress_callback = callback
     
     def set_chip_type(self, chip_type: str):
         """Set the chip type for relevant validators"""
@@ -102,6 +107,12 @@ class MNOFileComparator(BaseValidator):
                 success_count += 1
             else:
                 failure_count += 1
+            
+            # Call progress callback if set
+            if self.progress_callback:
+                total = len(matches)
+                progress_percent = int(((batch_index + 1) / total) * 80)  # Scale to 0-80%
+                self.progress_callback(progress_percent, f"Processing batch {batch_index + 1} of {total}...")
         
         return success_count, failure_count
     
@@ -399,5 +410,5 @@ class MNOFileComparator(BaseValidator):
             self.log(f"✅ PASS: {message}", "SUCCESS")
         else:
             self.log(f"❌ FAIL: {message}", "ERROR")
-            for error in errors[:3]:
+            for error in errors:
                 self.log(f"   - {error}", "ERROR")

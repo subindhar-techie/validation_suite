@@ -134,8 +134,9 @@ class MNOFileTab:
         """Get the absolute path to the application icon using resource_path"""
         try:
             # Use resource_path to find icon in both development and EXE
+            from runtime_hook import resource_path
             possible_paths = [
-                r"D:\Jio_Validation_Suite\assets\icons\RTL_logo.ico",
+                r"assets/icons/RTL_logo.ico",
             ]
             
             print("Searching for icon in following paths:")
@@ -146,6 +147,11 @@ class MNOFileTab:
                 if exists:
                     print(f"FOUND ICON: {icon_path}")
                     return icon_path
+            
+            # Fallback to hardcoded path
+            fallback = r"D:\Jio_Validation_Suite\assets\icons\RTL_logo.ico"
+            if os.path.exists(fallback):
+                return fallback
             
             print("Icon not found in any location")
             return None
@@ -222,7 +228,7 @@ class MNOFileTab:
         
         title_label = tk.Label(
             header_content,
-            text="MNO FILE VALIDATION SYSTEM",
+            text="Input/Output Files Validation",
             font=('Arial', 18, 'bold'),
             bg='#2c3e50',
             fg='#ecf0f1'
@@ -243,8 +249,8 @@ class MNOFileTab:
         content_frame.pack(fill=tk.BOTH, expand=True)
         
         # Left panel - Controls
-        left_panel = tk.Frame(content_frame, bg='#ffffff', relief=tk.RAISED, bd=1, width=320)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 15))
+        left_panel = tk.Frame(content_frame, bg='#ffffff', relief=tk.RAISED, bd=1, width=280)
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         left_panel.pack_propagate(False)
         
         # Right panel - Results
@@ -260,7 +266,7 @@ class MNOFileTab:
         folder_frame.pack(fill=tk.X, pady=(0, 15))
         
         # INPUT Folder
-        input_label = ttk.Label(folder_frame, text="INPUT Folder (contains .txt files):", font=('Arial', 9, 'bold'))
+        input_label = ttk.Label(folder_frame, text="INPUT Folder", font=('Arial', 9, 'bold'))
         input_label.pack(anchor=tk.W, pady=(0, 8))
         
         input_entry_frame = tk.Frame(folder_frame, bg='#ffffff')
@@ -273,8 +279,8 @@ class MNOFileTab:
         input_browse_btn.pack(side=tk.RIGHT)
         
         # OUTPUT Folder
-        output_label = ttk.Label(folder_frame, text="OUTPUT Folder (contains subfolders & report):", font=('Arial', 9, 'bold'))
-        output_label.pack(anchor=tk.W, pady=(0, 8))
+        output_label = ttk.Label(folder_frame, text="OUTPUT Folder", font=('Arial', 9, 'bold'))
+        output_label.pack(anchor=tk.W, pady=(0, 5))
         
         output_entry_frame = tk.Frame(folder_frame, bg='#ffffff')
         output_entry_frame.pack(fill=tk.X, pady=(0, 5))
@@ -287,7 +293,7 @@ class MNOFileTab:
         
         # Chip Type
         chip_label = ttk.Label(folder_frame, text="Chip Type:", font=('Arial', 9, 'bold'))
-        chip_label.pack(anchor=tk.W, pady=(10, 8))
+        chip_label.pack(anchor=tk.W, pady=(5, 5))
         
         self.chip_type = ttk.Combobox(
             folder_frame, 
@@ -299,8 +305,8 @@ class MNOFileTab:
         self.chip_type.set("SAMSUNG 340")
         
         # Batch Statistics Section
-        stats_frame = ttk.LabelFrame(left_content, text="Validation Statistics", padding=15)
-        stats_frame.pack(fill=tk.X, pady=(0, 20))
+        stats_frame = ttk.LabelFrame(left_content, text="Validation Statistics", padding=10)
+        stats_frame.pack(fill=tk.X, pady=(0, 10))
         
         # Statistics with consistent spacing
         stats_config = [
@@ -332,7 +338,7 @@ class MNOFileTab:
             value_label.pack(side=tk.RIGHT)
         
         # Actions Section
-        action_frame = ttk.LabelFrame(left_content, text="Validation Actions", padding=10)
+        action_frame = ttk.LabelFrame(left_content, text="Validation Actions", padding=8)
         action_frame.pack(fill=tk.X, pady=(0, 0))
         
         # Primary action buttons
@@ -344,11 +350,11 @@ class MNOFileTab:
             bg='#27ae60',
             fg='white',
             relief=tk.FLAT,
-            padx=10,
-            pady=10,
+            padx=8,
+            pady=8,
             cursor='hand2'
         )
-        self.validate_btn.pack(fill=tk.X, pady=(0, 8))
+        self.validate_btn.pack(fill=tk.X, pady=(0, 5))
         
         # Utility buttons
         utility_frame = tk.Frame(action_frame, bg='#ffffff')
@@ -366,7 +372,7 @@ class MNOFileTab:
             pady=8,
             cursor='hand2'
         )
-        self.clear_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.clear_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
         
         # Status label
         self.status_label = tk.Label(
@@ -376,7 +382,7 @@ class MNOFileTab:
             font=('Arial', 9, 'bold'),
             bg='#ffffff'
         )
-        self.status_label.pack(anchor=tk.W, pady=(10, 0))
+        self.status_label.pack(anchor=tk.W, pady=(5, 0))
         
         # === LOADING INDICATOR ===
         self.loading_frame = tk.Frame(self.parent, bg='#f5f6fa')
@@ -386,6 +392,30 @@ class MNOFileTab:
             font=('Arial', 12, 'bold'),
             bg='#f5f6fa',
             fg='#3498db'
+        )
+        
+        # Progress bar for validation status
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(
+            self.loading_frame,
+            variable=self.progress_var,
+            maximum=100,
+            mode='determinate',
+            length=250,
+            style='Custom.Horizontal.TProgressbar'
+        )
+        
+        # Configure custom progress bar style
+        style = ttk.Style()
+        style.configure('Custom.Horizontal.TProgressbar', thickness=20, background='#3498db')
+        
+        # Progress status label
+        self.progress_status = tk.Label(
+            self.loading_frame,
+            text="Initializing...",
+            font=('Arial', 10),
+            bg='#f5f6fa',
+            fg='#2c3e50'
         )
         
         # === RIGHT PANEL RESULTS ===
@@ -431,15 +461,17 @@ class MNOFileTab:
         # Initialize log
         self.log_message("System initialized and ready", "info")
         
-        # Center window
-        self.center_window()
+        # DO NOT center window - it's already centered from main_window
     
     def show_loading(self):
         """Show loading indicator"""
         if not self.is_loading:
             self.is_loading = True
+            self.progress_var.set(0)
             self.loading_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
-            self.loading_label.pack(pady=10)
+            self.loading_label.pack(pady=(20, 10))
+            self.progress_bar.pack(pady=(0, 10))
+            self.progress_status.pack(pady=(0, 20))
             self.validate_btn.config(state='disabled', bg='#95a5a6')
             self.parent.update()
     
@@ -448,8 +480,36 @@ class MNOFileTab:
         if self.is_loading:
             self.is_loading = False
             self.loading_frame.place_forget()
+            self.progress_bar.pack_forget()
+            self.progress_status.pack_forget()
             self.validate_btn.config(state='normal', bg='#27ae60')
             self.parent.update()
+    
+    def update_progress(self, value, status_text=""):
+        """Update progress bar value and status text"""
+        self.progress_var.set(value)
+        if status_text:
+            self.progress_status.config(text=status_text)
+        self.parent.update_idletasks()
+    
+    def _on_validation_progress(self, progress, status_text):
+        """Callback for validation progress updates"""
+        self.progress_var.set(progress)
+        self.progress_status.config(text=status_text)
+        self.parent.update_idletasks()
+    
+    def show_result_dialog(self, success_count, failure_count, report_path=None):
+        """Show popup dialog with success/error message"""
+        total = success_count + failure_count
+        if failure_count == 0 and total > 0:
+            messagebox.showinfo("Validation Successful", 
+                f"All {total} file(s) validated successfully!\n\nReport saved to: {report_path}")
+        elif success_count > 0 and failure_count > 0:
+            messagebox.showwarning("Validation Completed with Errors",
+                f"Processed {total} file(s): {success_count} passed, {failure_count} failed.\n\nReport saved to: {report_path}")
+        else:
+            messagebox.showerror("Validation Failed",
+                f"Failed to validate any of the {total} file(s).")
     
     def update_counters(self, total=0, passed=0, failed=0):
         """Update batch counters"""
@@ -530,11 +590,17 @@ class MNOFileTab:
         self.parent.update_idletasks()
     
     def clear_results(self):
-        """Clear results and reset counters"""
+        """Clear results, counters, and input fields"""
+        # Clear input fields
+        self.input_folder.set("")
+        self.output_folder.set("")
+        self.chip_type.set("")
+        
+        # Clear results and counters
         self.results_text.delete(1.0, tk.END)
         self.comparator.clear_tracking()
         self.update_counters(0, 0, 0)
-        self.log_message("Results cleared", "info")
+        self.log_message("All fields cleared", "info")
         self.update_status("Ready", "success")
     
     def start_comparison(self):
@@ -561,6 +627,7 @@ class MNOFileTab:
         try:
             self.show_loading()
             self.update_status("Validation running...", "info")
+            self.update_progress(0, "Initializing validation...")
             
             # Reset UI counters
             self.update_counters(0, 0, 0)
@@ -577,9 +644,16 @@ class MNOFileTab:
             # Configure comparator - ACTUAL VALIDATION
             self.comparator.set_log_callback(self.log_message)
             self.comparator.set_chip_type(self.chip_type.get())
+            self.comparator.set_progress_callback(self._on_validation_progress)
+            
+            # Update progress to show we're starting
+            self.update_progress(5, "Initializing validation...")
             
             # Run validation - ACTUAL VALIDATION (pass both input and output folders)
             success_count, failure_count = self.comparator.run_validation(output_folder, input_folder, output_folder)
+            
+            # Update progress to show completion
+            self.update_progress(90, "Finalizing results...")
             
             # Update counters
             total = success_count + failure_count
@@ -587,11 +661,19 @@ class MNOFileTab:
 
             # Show results in UI
             self.display_final_summary(success_count, failure_count)
-
+            
             # Generate Excel report automatically
+            excel_path = None
             if total > 0:
+                self.update_progress(95, "Generating Excel report...")
                 self.update_status("Generating Excel report...", "info")
-                self.generate_excel_report()
+                excel_path = self.comparator.generate_excel_reports(output_folder)
+            
+            # Complete progress
+            self.update_progress(100, "Validation complete!")
+            
+            # Show custom popup dialog with results
+            self.show_result_dialog(success_count, failure_count, excel_path)
 
         except Exception as e:
             error_msg = f"Validation process error: {str(e)}"

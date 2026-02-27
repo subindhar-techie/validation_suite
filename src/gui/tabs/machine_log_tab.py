@@ -3,6 +3,8 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 from PIL import Image as PILImage, ImageTk
 import os
 import sys
+import time
+from datetime import datetime
 from ..theme import Theme
 
 # Import resource_path function
@@ -84,6 +86,32 @@ class MachineLogTab:
         self.window_icon = None  # Add this line
         self.create_widgets()
     
+    def is_file_open(self, filepath):
+        """Check if a file is already open"""
+        if not filepath:
+            return False
+        
+        # Check if file exists
+        if os.path.exists(filepath):
+            # Try to open the file in write mode to check if it's locked
+            try:
+                with open(filepath, 'r+') as f:
+                    # Try to read a byte to test access
+                    f.read(1)
+                return False  # File is accessible, not locked
+            except (IOError, PermissionError, OSError):
+                # File is likely open/locked by another application
+                return True
+            except Exception:
+                return True
+        
+        # File doesn't exist yet - check if directory is writable
+        dir_path = os.path.dirname(filepath)
+        if dir_path and not os.access(dir_path, os.W_OK):
+            return True
+        
+        return False
+    
     def create_widgets(self):
         # Global variables for GUI components
         self.root = None
@@ -96,21 +124,24 @@ class MachineLogTab:
     def get_icon_path(self):
         """Get the absolute path to the application icon - IMPROVED VERSION"""
         try:
+            # Import resource_path
+            from runtime_hook import resource_path
+            
             # Try multiple possible locations for both development and EXE
             possible_paths = [
                 # For PyInstaller EXE (using resource_path)
-                resource_path('assets/icons/RTL_logo.JPG'),
-                resource_path('RTL_logo.JPG'),
+                resource_path('assets/icons/RTL_logo.ico'),
+                resource_path('RTL_logo.ico'),
                 
                 # For development (relative paths)
-                os.path.join(os.path.dirname(__file__), '..', '..', '..', 'assets', 'icons', 'RTL_logo.JPG'),
-                os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'icons', 'RTL_logo.JPG'),
+                os.path.join(os.path.dirname(__file__), '..', '..', '..', 'assets', 'icons', 'RTL_logo.ico'),
+                os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'icons', 'RTL_logo.ico'),
                 
                 # Common project structures
-                'assets/icons/RTL_logo.JPG',
-                '../assets/icons/RTL_logo.JPG',
-                '../../assets/icons/RTL_logo.JPG',
-                'src/assets/icons/RTL_logo.JPG',
+                'assets/icons/RTL_logo.ico',
+                '../assets/icons/RTL_logo.ico',
+                '../../assets/icons/RTL_logo.ico',
+                'src/assets/icons/RTL_logo.ico',
             ]
             
             for icon_path in possible_paths:
@@ -119,13 +150,6 @@ class MachineLogTab:
                 if os.path.exists(icon_path):
                     print(f"Icon found at: {icon_path}")
                     return icon_path
-                
-                # Also try with .jpg extension (case-insensitive)
-                if not icon_path.lower().endswith('.jpg'):
-                    jpg_path = icon_path + '.jpg'
-                    if os.path.exists(jpg_path):
-                        print(f"Icon found at: {jpg_path}")
-                        return jpg_path
             
             print("Icon not found in any expected location")
             return None
@@ -136,7 +160,7 @@ class MachineLogTab:
 
     def browse_script_file(self):
         filename = filedialog.askopenfilename(
-            title="Select Variable Script File",
+            title="Select Perso Script File",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
         )
         if filename:
@@ -159,65 +183,55 @@ class MachineLogTab:
         
         # Validation checks
         if not script_path or not machine_log_path:
-            messagebox.showerror("Error", "Please select both Variable Script and Machine Log files.")
+            messagebox.showerror("Error", "Please select both Perso Script and Machine Log files.")
             return
         
         try:
             # Clear previous results
             self.log_output.delete(1.0, tk.END)
-            self.log_output.insert(tk.END, "="*60 + "\n")
-            self.log_output.insert(tk.END, "STARTING MACHINE LOG VALIDATION...\n")
-            self.log_output.insert(tk.END, "="*60 + "\n\n")
+            self.log_output.insert(tk.END, "First Card Validation Machine\n")
+            self.log_output.insert(tk.END, "="*50 + "\n\n")
             
             # Initialize validator
             validator = ScriptValidator()
             
-            self.log_output.insert(tk.END, "📋 Validation Mode: Dynamic Validation\n")
-            self.log_output.insert(tk.END, "   (No module type selection required)\n")
-            self.log_output.insert(tk.END, "\n")
-            
-            # Parse files
-            self.log_output.insert(tk.END, "📁 Parsing Variable Script file...\n")
+            # Parse files (silent)
             if not validator.parse_script_file(script_path):
-                self.log_output.insert(tk.END, "❌ Failed to parse Variable Script file.\n")
-                messagebox.showerror("Error", "Failed to parse Variable Script file.")
+                self.log_output.insert(tk.END, "❌ Error: Failed to parse Perso Script file.\n")
+                messagebox.showerror("Error", "Failed to parse Perso Script file.")
                 return
-            self.log_output.insert(tk.END, f"✅ Parsed {len(validator.script_commands)} script commands\n")
-                
-            self.log_output.insert(tk.END, "📁 Parsing Machine Log file...\n")
+            
             if not validator.parse_machine_log(machine_log_path):
-                self.log_output.insert(tk.END, "❌ Failed to parse Machine Log file.\n")
+                self.log_output.insert(tk.END, "❌ Error: Failed to parse Machine Log file.\n")
                 messagebox.showerror("Error", "Failed to parse Machine Log file.")
                 return
-            self.log_output.insert(tk.END, f"✅ Parsed {len(validator.machine_logs)} machine log entries\n\n")
             
-            # Run validation
-            self.log_output.insert(tk.END, "🚀 Starting dynamic validation...\n")
-            self.log_output.insert(tk.END, "   Step 0: Skipping irrelevant lines\n")
-            self.log_output.insert(tk.END, "   Step 1: Aligning script and machine log\n")
-            self.log_output.insert(tk.END, "   Step 2: Extracting and comparing SW values\n")
-            self.log_output.insert(tk.END, "   Step 2.5: Checking for actual data in machine log\n")
-            self.log_output.insert(tk.END, "   Step 3: Extracting and mapping placeholders\n")
-            self.log_output.insert(tk.END, "\n")
-            
+            # Run validation (silent)
             report = validator.validate_script_vs_machine_log()
             
-            # Display results
-            self.log_output.insert(tk.END, "\n" + "="*60 + "\n")
-            self.log_output.insert(tk.END, "VALIDATION RESULTS\n")
-            self.log_output.insert(tk.END, "="*60 + "\n\n")
-            self.log_output.insert(tk.END, report + "\n")
+            # Get summary only
+            total = len(validator.validation_results)
+            passed = sum(1 for r in validator.validation_results if r.get('status') == 'PASS')
+            failed = total - passed
+            
+            # Display minimal results
+            self.log_output.insert(tk.END, "Validation Results:\n")
+            self.log_output.insert(tk.END, "-" * 30 + "\n")
+            self.log_output.insert(tk.END, f"Total: {total}\n")
+            self.log_output.insert(tk.END, f"Passed: {passed}\n")
+            self.log_output.insert(tk.END, f"Failed: {failed}\n")
+            self.log_output.insert(tk.END, "-" * 30 + "\n")
             
             # Save report to machine log directory
             machine_log_dir = os.path.dirname(machine_log_path)
             iccid_swapped = validator.field_values.get("ICCID_CARD_SWAPPED")
 
             if iccid_swapped:
-                report_filename = f"{iccid_swapped}_validation_report.txt"
+                report_filename = f"{iccid_swapped}_1st_card_machine_log_Validation.txt"
             else:
                 log_filename = os.path.basename(machine_log_path)
                 log_name = os.path.splitext(log_filename)[0]
-                report_filename = f"{log_name}_validation_report.txt"
+                report_filename = f"{log_name}_1st_card_machine_log_Validation.txt"
 
             report_path = os.path.join(machine_log_dir, report_filename)
             print(f"Report Will Be Saved To: {report_path}")        
@@ -225,15 +239,20 @@ class MachineLogTab:
                 with open(report_path, 'w', encoding='utf-8') as f:
                     f.write(report)
                 self.log_output.insert(tk.END, f"\n✅ Report saved to: {report_path}\n")
-                messagebox.showinfo("Success", f"Machine Log validation completed!\nReport saved to:\n{report_path}")
+                if failed > 0:
+                    messagebox.showwarning("Validation Completed with Errors", 
+                        f"First Card Validation completed with {failed} error(s).\n\nReport saved to:\n{report_path}")
+                else:
+                    messagebox.showinfo("Success", 
+                        f"First Card Validation completed successfully!\n\nReport saved to:\n{report_path}")
             except Exception as e:
                 self.log_output.insert(tk.END, f"❌ Failed to save report: {str(e)}\n")
-                messagebox.showwarning("Warning", f"Validation completed but failed to save report: {str(e)}")
+                messagebox.showerror("Error", f"Validation completed but failed to save report:\n{str(e)}")
             
         except Exception as e:
-            error_msg = f"❌ Machine Log Validation Error: {str(e)}\n"
+            error_msg = f"❌ First Card Validation Error: {str(e)}\n"
             self.log_output.insert(tk.END, error_msg)
-            messagebox.showerror("Error", f"Machine Log validation failed:\n{str(e)}")
+            messagebox.showerror("Error", f"First Card Validation failed:\n{str(e)}")
 
     def clear_all_fields(self):
         """Clear all input fields and log output"""
@@ -241,24 +260,14 @@ class MachineLogTab:
         self.machine_log_entry.delete(0, tk.END)
         self.log_output.delete(1.0, tk.END)
         
-        # Add initial instructions back
-        self.log_output.insert(tk.END, "INSTRUCTIONS:\n")
-        self.log_output.insert(tk.END, "1. Select Variable Script File and Machine Log File\n")
-        self.log_output.insert(tk.END, "2. Click 'Validate Machine Log' to start validation\n")
-        self.log_output.insert(tk.END, "3. No module type selection required - dynamic validation\n")
-        self.log_output.insert(tk.END, "\n")
-        self.log_output.insert(tk.END, "DYNAMIC VALIDATION LOGIC:\n")
-        self.log_output.insert(tk.END, "- Step 0: Skip irrelevant lines (0012000000SW9000, PPS:, AES_)\n")
-        self.log_output.insert(tk.END, "- Step 1: Define Source (Script) and Designation (Machine Log)\n")
-        self.log_output.insert(tk.END, "- Step 2: Extract Actual SW and Compare for Success\n")
-        self.log_output.insert(tk.END, "- Step 2.5: Check Machine Log for Actual Data (not placeholders)\n")
-        self.log_output.insert(tk.END, "- Step 3: Extract and Map Placeholders (Only After SW Success)\n")
-        self.log_output.insert(tk.END, "- Step 4: Construct Full APDU (After Placeholder Replacement)\n")
-        self.log_output.insert(tk.END, "- Step 5: Summarize Data Comparison\n")
-        self.log_output.insert(tk.END, "- Step 6: Ignore Structure/Formatting Differences\n")
-        self.log_output.insert(tk.END, "\n")
-        self.log_output.insert(tk.END, "Key Principle: SW determines success. Only extract data after SW=9000\n")
-        self.log_output.insert(tk.END, "and machine log contains actual hex values (not placeholders).\n")
+        # Show minimal instructions
+        self.log_output.insert(tk.END, "First Card Validation Machine\n")
+        self.log_output.insert(tk.END, "="*50 + "\n\n")
+        self.log_output.insert(tk.END, "Instructions:\n")
+        self.log_output.insert(tk.END, "1. Select Perso Script File\n")
+        self.log_output.insert(tk.END, "2. Select Machine Log File\n")
+        self.log_output.insert(tk.END, "3. Click Validate\n")
+        self.log_output.insert(tk.END, "="*50 + "\n")
         self.log_output.insert(tk.END, "="*60 + "\n\n")
 
     def launch_gui(self):
@@ -295,16 +304,11 @@ class MachineLogTab:
             print(f"Icon loading failed: {e}. Using default icon.")
             # Don't crash the application if icon fails
 
-        self.root.title("Machine Log Validation Tool - Dynamic Validation")
-        self.root.geometry("1100x750")
+        self.root.title("1st Card Machine Log Validation")
         
-        # Center window on screen
-        self.root.update_idletasks()
-        width = 1100
-        height = 750
-        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.root.winfo_screenheight() // 2) - (height // 2)
-        self.root.geometry(f'{width}x{height}+{x}+{y}')
+        # DO NOT reset geometry - it's already centered from main_window
+        # But ensure the size is correct
+        self.root.geometry("1100x750")
         
         # PREVENT MAXIMIZING - Set min and max size to current size
         self.root.minsize(1100, 750)  # Minimum size = current size
@@ -342,7 +346,7 @@ class MachineLogTab:
         
         title_label = tk.Label(
             header_content,
-            text="📊 Machine Log Validation Tool - Dynamic Validation",
+            text="📊 1st Card Machine Log validation",
             font=('Arial', 16, 'bold'),
             bg='#2c3e50',
             fg='#ecf0f1'
@@ -370,8 +374,8 @@ class MachineLogTab:
         file_frame = ttk.LabelFrame(left_content, text="File Selection", padding=15)
         file_frame.pack(fill=tk.X, pady=(0, 15))
 
-        # Variable Script File Selection
-        ttk.Label(file_frame, text="Variable Script File:", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 6))
+        # Perso Script File Selection
+        ttk.Label(file_frame, text="Perso Script File:", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 6))
         
         script_frame = tk.Frame(file_frame, bg='#ffffff')
         script_frame.pack(fill=tk.X, pady=(0, 8))
@@ -394,23 +398,11 @@ class MachineLogTab:
         machine_btn = ttk.Button(machine_frame, text="Browse", command=self.browse_machine_log_file, width=8)
         machine_btn.pack(side=tk.RIGHT)
 
-        # Dynamic Validation Info Frame
-        info_frame = ttk.LabelFrame(left_content, text="ℹ️ Dynamic Validation Info", padding=12)
+        # Validation Info Frame
+        info_frame = ttk.LabelFrame(left_content, text="ℹ️ Validation Info", padding=12)
         info_frame.pack(fill=tk.X, pady=(0, 12))
         
-        info_text = """Validation Logic:
-• Step 0: Skip irrelevant lines
-• Step 1: Align script and machine log
-• Step 2: Extract SW and compare
-• Step 2.5: Check for actual data
-• Step 3: Extract placeholders
-• Step 4: Construct full APDU
-• Step 5: Summarize comparison
-• Step 6: Ignore formatting
-
-Key: SW determines success.
-Data only extracted after SW=9000
-and actual values exist."""
+        info_text = "Validation is performed internally.\nResults will be displayed after completion."
         
         info_label = tk.Label(
             info_frame,
@@ -431,7 +423,7 @@ and actual values exist."""
         # Store button reference for threading
         self.validate_button = tk.Button(
             action_frame,
-            text="▶️ Validate Machine Log",
+            text="▶️ Validate First Card Log",
             command=self.validate_machine_log,
             font=('Arial', 10, 'bold'),
             bg='#27ae60',

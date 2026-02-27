@@ -84,7 +84,7 @@ class DataFieldValidator(BaseValidator):
                     f"Data validation failed - {len(errors)} errors found "
                     f"in {total_checked} lines"
                 )
-                return ValidationResult(False, error_msg, errors[:50])
+                return ValidationResult(False, error_msg, errors)
             
             success_msg = (
                 f"All data fields validated successfully - "
@@ -120,11 +120,12 @@ class DataFieldValidator(BaseValidator):
                 )
                 errors.extend(iccid_errors)
             else:
+                # IN value is Expected, CNUM value is Found
                 if in_value != cnum_value:
                     error_msg = (
                         f"ERR: {field_name} Data Mismatch "
-                        f"(Expected: {cnum_value}) "
-                        f"(Found: {in_value}) "
+                        f"(Expected: {in_value}) "
+                        f"(Found: {cnum_value}) "
                         f"[Line: {line_number}]"
                     )
                     errors.append(error_msg)
@@ -175,8 +176,8 @@ class DataFieldValidator(BaseValidator):
             if in_iccid != cnum_prefix_19:
                 errors.append(
                     f"ERR: ICCID Data Mismatch "
-                    f"(Expected: {cnum_prefix_19}) "
-                    f"(Found: {in_iccid}) "
+                    f"(Expected: {in_iccid}) "
+                    f"(Found: {cnum_prefix_19}) "
                     f"[Line: {line_number}]"
                 )
 
@@ -185,8 +186,8 @@ class DataFieldValidator(BaseValidator):
             if in_iccid != cnum_iccid:
                 errors.append(
                     f"ERR: ICCID Data Mismatch (20-digit input) "
-                    f"(Expected full match: {cnum_iccid}) "
-                    f"(Found: {in_iccid}) "
+                    f"(Expected full match: {in_iccid}) "
+                    f"(Found: {cnum_iccid}) "
                     f"[Line: {line_number}]"
                 )
 

@@ -121,7 +121,7 @@ class ExcelReportGenerator:
                 cell.style = "Hyperlink"
         
     def _create_batch_details(self, writer, excel_reports: List[Dict]):
-        """Create detailed batch sheets with ALL errors for all validation types"""
+        """Create detailed batch sheets with grouped errors for all validation types"""
         for report in excel_reports:
             sheet_name = f"Batch_{report['batch_number']}"
             if len(sheet_name) > 31:
@@ -134,14 +134,24 @@ class ExcelReportGenerator:
                 status = "PASS" if success else "FAIL"
                 error_count = len(errors)
                 
-                # Show ALL errors for ALL validation types
+                # Show grouped errors for ALL validation types
                 if not success and errors:
-                    if error_count <= 10:
-                        all_errors = "\n".join([f"• {error}" for error in errors])
-                        details = f"{message}\n\nAll Errors ({error_count}):\n{all_errors}"
+                    # Analyze errors to determine if they're grouped
+                    # Check if errors contain line range information
+                    has_line_ranges = any("lines affected" in str(e).lower() or "line " in str(e).lower() for e in errors)
+                    
+                    if has_line_ranges:
+                        # Errors are already grouped - show all unique error types
+                        details = f"{message}\n\nGrouped Errors:\n"
+                        details += "\n".join([f"• {error}" for error in errors])
                     else:
-                        first_10_errors = "\n".join([f"• {error}" for error in errors[:10]])
-                        details = f"{message}\n\nFirst 10 Errors (of {error_count} total):\n{first_10_errors}"
+                        # Legacy format - show first 10 errors
+                        if error_count <= 10:
+                            all_errors = "\n".join([f"• {error}" for error in errors])
+                            details = f"{message}\n\nAll Errors ({error_count}):\n{all_errors}"
+                        else:
+                            all_errors = "\n".join([f"• {error}" for error in errors])
+                            details = f"{message}\n\nAll Errors ({error_count} total):\n{all_errors}"
                 else:
                     details = message
                 

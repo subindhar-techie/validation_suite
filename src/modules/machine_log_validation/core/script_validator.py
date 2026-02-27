@@ -92,7 +92,7 @@ class ScriptValidator:
             return "0001"
 
     def parse_script_file(self, script_path: str) -> bool:
-        """Parse Variable Script file according to the specified format"""
+        """Parse Perso Script file according to the specified format"""
         try:
             with open(script_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()

@@ -4,8 +4,9 @@ MNO File Validator - SCM file validation logic
 import re
 import os
 import sys
-from typing import List, Tuple, Set, Optional, Callable
+from typing import List, Tuple, Set, Optional, Callable, Dict
 from pathlib import Path
+from collections import defaultdict
 
 # Add the modules path to sys.path
 current_dir = os.path.dirname(__file__)
@@ -16,6 +17,81 @@ if modules_path not in sys.path:
     sys.path.insert(0, modules_path)
 
 from .validation_base import BaseValidator, ValidationResult
+
+
+class ErrorGrouper:
+    """Groups similar errors together for cleaner reporting"""
+    
+    def __init__(self):
+        self.error_groups: Dict[str, List[int]] = {}
+        
+    def add_error(self, error_type: str, expected: str, found: str, line_num: int):
+        """Add an error to the appropriate group"""
+        # Create a key that uniquely identifies this error pattern
+        group_key = f"{error_type}|{expected}|{found}"
+        
+        if group_key not in self.error_groups:
+            self.error_groups[group_key] = []
+        self.error_groups[group_key].append(line_num)
+    
+    def get_grouped_errors(self) -> List[Tuple[str, str, str, List[int]]]:
+        """Get list of grouped errors with line ranges"""
+        grouped = []
+        for group_key, line_nums in self.error_groups.items():
+            parts = group_key.split('|')
+            error_type = parts[0]
+            expected = parts[1]
+            found = parts[2]
+            
+            # Sort line numbers
+            line_nums.sort()
+            
+            # Create line range string
+            line_range = self._format_line_range(line_nums)
+            
+            grouped.append((error_type, expected, found, line_nums, line_range))
+        
+        # Sort by first line number
+        grouped.sort(key=lambda x: x[3][0])
+        return grouped
+    
+    def _format_line_range(self, line_nums: List[int]) -> str:
+        """Format line numbers into a readable range"""
+        if not line_nums:
+            return ""
+        
+        if len(line_nums) == 1:
+            return f"Line {line_nums[0]}"
+        
+        # Find consecutive ranges
+        ranges = []
+        start = line_nums[0]
+        end = line_nums[0]
+        
+        for i in range(1, len(line_nums)):
+            if line_nums[i] == end + 1:
+                end = line_nums[i]
+            else:
+                if start == end:
+                    ranges.append(f"Line {start}")
+                else:
+                    ranges.append(f"Lines {start}-{end}")
+                start = line_nums[i]
+                end = line_nums[i]
+        
+        # Add the last range
+        if start == end:
+            ranges.append(f"Line {start}")
+        else:
+            ranges.append(f"Lines {start}-{end}")
+        
+        if len(ranges) == 1:
+            return ranges[0]
+        elif len(ranges) == 2:
+            return f"{ranges[0]} and {ranges[1]}"
+        else:
+            return f"{ranges[0]}, {ranges[1]}, and {len(ranges)-2} more"
+
 
 class SCMValidator(BaseValidator):
     """Handles SCM file structure validation"""
@@ -96,7 +172,6 @@ class SCMValidator(BaseValidator):
             # FIX: Calculate MSN based on record position within batch
             current_expected_msn = expected_start_msn
             last_msn_in_batch = None
-            last_msc_in_batch = None
             
             for i, line in enumerate(data_lines, 2):
                 fields = line.strip().split('\t')
@@ -107,14 +182,26 @@ class SCMValidator(BaseValidator):
                     )
                     continue
                 
+                # Extract all fields from SCM file
+                skucode = fields[0] if len(fields) > 0 else ""
                 batchno = fields[4]
                 ponum = fields[5]
+                vendercode = fields[6] if len(fields) > 6 else ""
                 msn = fields[1]
                 msc = fields[7]
                 
                 # Extract ICCID and IMSI from SCM file
                 scm_iccid = fields[2] if len(fields) > 2 else ""
                 scm_imsi = fields[3] if len(fields) > 3 else ""
+                
+                # Validate SKUCODE
+                if skucode != sku:
+                    errors.append(
+                        f"ERR: SKUCODE Mismatch "
+                        f"(Expected: {sku}) "
+                        f"(Found: {skucode}) "
+                        f"[Line: {i}]"
+                    )
                 
                 # Validate basic fields
                 basic_errors = self._validate_scm_basic_fields(
@@ -136,7 +223,7 @@ class SCMValidator(BaseValidator):
                 errors.extend(msn_errors)
                 
                 # Validate MSC structure
-                msc_errors, last_msc_in_batch = self._validate_msc_structure(
+                msc_errors, _ = self._validate_msc_structure(
                     msc, processed_sku, po_last_3, expected_urt,
                     expected_msc, msc_values, i
                 )
@@ -161,23 +248,17 @@ class SCMValidator(BaseValidator):
             # Store tracking data
             self.batch_tracking[f"batch_{batch_index}"] = {
                 'last_msn': last_msn_in_batch,
-                'last_msc': last_msc_in_batch
+                'last_msc': expected_msc
             }
             
-            # Validate MSC consistency
-            if len(msc_values) > 1:
-                error_msg = (
-                    f"Multiple MSCs found in batch: {list(msc_values)} - "
-                    f"expected only one MSC"
-                )
-                errors.append(error_msg)
+            # Note: Removed the "Multiple MSCs found in batch" error as per requirements
             
             if errors:
                 error_msg = (
                     f"SCM Validation failed - "
                     f"{len(errors)} errors found"
                 )
-                return ValidationResult(False, error_msg, errors[:15])
+                return ValidationResult(False, error_msg, errors)
             
             msc_display = list(msc_values)[0] if msc_values else 'N/A'
             success_msg = (
@@ -374,28 +455,18 @@ class SCMValidator(BaseValidator):
                 )
                 errors.append(error_msg)
             else:
-                # STRICT MSC VALIDATION - Always check against expected_msc
-                if not msc_values:  # First MSC in batch
-                    if msc_mc != expected_msc:
-                        error_msg = (
-                            f"ERR: MSC Data Mismatch "
-                            f"(Expected: {expected_msc}) "
-                            f"(Found: {msc_mc}) "
-                            f"[Line: {line_num}]"
-                        )
-                        errors.append(error_msg)
-                    msc_values.add(msc_mc)
-                else:
-                    # Subsequent MSCs must match the first one
-                    expected_msc_value = list(msc_values)[0]
-                    if msc_mc != expected_msc_value:
-                        error_msg = (
-                            f"ERR: MSC Inconsistent "
-                            f"(Expected: {expected_msc_value}) "
-                            f"(Found: {msc_mc}) "
-                            f"[Line: {line_num}]"
-                        )
-                        errors.append(error_msg)
+                # STRICT MSC VALIDATION - Always check against expected_msc from validation logic
+                # Use expected_msc consistently for ALL lines, not the first value found
+                if msc_mc != expected_msc:
+                    error_msg = (
+                        f"ERR: MSC Sequence Mismatch "
+                        f"(Expected: {expected_msc}) "
+                        f"(Found: {msc_mc}) "
+                        f"[Line: {line_num}]"
+                    )
+                    errors.append(error_msg)
+                
+                msc_values.add(msc_mc)
             
             last_msc = msc_mc
         
@@ -452,12 +523,10 @@ class SCMValidator(BaseValidator):
         """Cross-validate ICCID and IMSI between SCM and CNUM files"""
         errors = []
         
-        # Compare ICCID between SCM and CNUM
+        # Compare ICCID between SCM and CNUM - Compare all 20 digits
         if scm_iccid and cnum_iccid:
-            scm_iccid_compare = scm_iccid[:19] if len(scm_iccid) == 20 else scm_iccid
-            cnum_iccid_compare = cnum_iccid[:19] if len(cnum_iccid) == 20 else cnum_iccid
-            
-            if scm_iccid_compare != cnum_iccid_compare:
+            # Compare the complete ICCID (all 20 digits)
+            if scm_iccid != cnum_iccid:
                 errors.append(
                     f"ERR: ICCID Mismatch between SCM and CNUM "
                     f"(Expected: {cnum_iccid}) "

@@ -202,3 +202,4 @@ def process_qr_code_wbiot(image_path):
 def process_qr_code_mob(image_path):
     """Fallback for MOB logic if needed, but WBIOT is the primary target now"""
     return process_qr_code_wbiot(image_path)
+

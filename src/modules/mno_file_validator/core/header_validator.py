@@ -39,8 +39,8 @@ class HeaderValidator(BaseValidator):
                 if in_lines[i] != cnum_lines[i]:
                     mismatches.append(
                         f"ERR: Header Data Mismatch "
-                        f"(Expected: '{cnum_lines[i]}') "
-                        f"(Found: '{in_lines[i]}') "
+                        f"(Expected: '{in_lines[i]}') "
+                        f"(Found: '{cnum_lines[i]}') "
                         f"[Line: {i+1}]"
                     )
             

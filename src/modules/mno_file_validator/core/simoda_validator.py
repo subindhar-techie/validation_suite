@@ -90,8 +90,26 @@ class SIMODAValidator(BaseValidator):
             cnum_imsis_set = set(cnum_imsis)
             
             # Find all numbers in content that match ICCID/IMSI patterns
-            all_iccids_in_content = set(re.findall(r'\d{19,20}', content))
-            all_imsis_in_content = set(re.findall(r'\d{15}', content))
+            # Include more variations to catch different formats
+            all_iccids_in_content = set()
+            
+            # Find all 19-20 digit sequences
+            for match in re.finditer(r'\d{19,20}', content):
+                all_iccids_in_content.add(match.group())
+            
+            # Also check for quoted ICCIDs
+            for match in re.finditer(r'"\d{19,20}"', content):
+                all_iccids_in_content.add(match.group().strip('"'))
+            
+            # Also check for ICCIDs with possible separators
+            for match in re.finditer(r'\d{5}[\s\-]?\d{5}[\s\-]?\d{5}[\s\-]?\d{4,5}', content):
+                cleaned = match.group().replace(' ', '').replace('-', '')
+                if len(cleaned) >= 19:
+                    all_iccids_in_content.add(cleaned[:20])  # Take first 20 chars
+            
+            all_imsis_in_content = set()
+            for match in re.finditer(r'\d{15}', content):
+                all_imsis_in_content.add(match.group())
             
             # Find missing ICCIDs and IMSIs using set difference
             missing_iccids = cnum_iccids_set - all_iccids_in_content
@@ -113,7 +131,6 @@ class SIMODAValidator(BaseValidator):
                             f"ERR: ICCID Data Issue "
                             f"(Expected: {iccid}) "
                             f"Not Present in SIMODA file"
-                            f"[Line: {line_number}]"
                         )
                     else:
                         error_msg = (

@@ -20,22 +20,27 @@ class MainWindow:
     def __init__(self, root):
         self.root = root
         self.root.title("Data Validation Tool")
-        self.root.geometry("500x650") 
-        
-        # DISABLE ONLY MAXIMIZE BUTTON - Allow minimize and close
         self.root.resizable(False, False)
         self.root.configure(bg=Theme.BG_MAIN)
         
-        # CENTER THE WINDOW ON SCREEN
-        self.center_window()
-        
-        # Set icon
+        # Set icon FIRST before any geometry changes to ensure it's visible from start
         try:
             icon_path = self.get_icon_path()
             if os.path.exists(icon_path):
                 self.root.iconbitmap(icon_path)
         except Exception as e:
             print(f"Icon error: {e}")
+        
+        # Calculate screen dimensions and set geometry with center position in ONE call
+        # This prevents the window from appearing in wrong position first
+        self.root.update_idletasks()
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        window_width = 500
+        window_height = 650
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
         
         self.create_launcher_interface()
     
@@ -56,18 +61,20 @@ class MainWindow:
         """Get the absolute path to the application icon"""
         try:
             from runtime_hook import resource_path
-            icon_path = r"D:\Jio_Validation_Suite\assets\icons\RTL_logo.ico"
+            # Use resource_path for both dev and exe
+            icon_path = resource_path(r"assets/icons/RTL_logo.ico")
             if os.path.exists(icon_path):
                 return icon_path
-            # Fallback path logic
-            current_dir = os.path.dirname(__file__)
-            # Try finding it relative to src
+            # Fallback: try different variations
+            current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             possible_paths = [
-                r"D:\Jio_Validation_Suite\assets\icons\RTL_logo.ico",
+                os.path.join(current_dir, 'assets', 'icons', 'RTL_logo.ico'),
+                os.path.join(current_dir, '..', 'assets', 'icons', 'RTL_logo.ico'),
             ]
             for path in possible_paths:
-                 if os.path.exists(path):
-                     return os.path.abspath(path)
+                path = os.path.normpath(path)
+                if os.path.exists(path):
+                    return path
             return None
         except Exception as e:
             print(f"Error finding icon: {e}")
@@ -111,7 +118,7 @@ class MainWindow:
         # Create tool cards
         self.create_tool_card(cards_frame, "First Card Validation", "Validate text file and image", self.launch_first_card_tab)
         self.create_tool_card(cards_frame, "Machine Log Validation", "Validate machine logs against script", self.launch_machine_log_tab)
-        self.create_tool_card(cards_frame, "MNO File Validation", "Validate MNO files in bulk", self.launch_mno_file_tab)
+        self.create_tool_card(cards_frame, "Input/Output Files Validation", "Validate Input/Output files in bulk", self.launch_mno_file_tab)
         
         # Status bar
         self.status_frame = tk.Frame(self.root, bg=Theme.SECONDARY, height=30)
@@ -219,12 +226,31 @@ class MainWindow:
         try:
             from .tabs.first_card_tab import FirstCardTab
             self.root.withdraw()
+            
+            # Create window but keep it withdrawn until fully configured
             new_window = tk.Toplevel(self.root)
+            new_window.withdraw()  # Keep hidden until fully ready
             new_window.title("First Card Validation")
-            new_window.geometry("820x750")
             new_window.resizable(False, False)
             new_window.configure(bg=Theme.BG_MAIN) # Apply theme background
-            self.center_child_window(new_window)
+            
+            # Set icon FIRST before geometry to ensure it's visible from start
+            try:
+                icon_path = self.get_icon_path()
+                if os.path.exists(icon_path):
+                    new_window.iconbitmap(icon_path)
+            except Exception as e:
+                print(f"Icon error: {e}")
+            
+            # Calculate center position and set geometry with position in ONE call
+            new_window.update_idletasks()
+            screen_width = new_window.winfo_screenwidth()
+            screen_height = new_window.winfo_screenheight()
+            window_width = 820
+            window_height = 750
+            x = (screen_width - window_width) // 2
+            y = (screen_height - window_height) // 2
+            new_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
             
             def on_close():
                 new_window.destroy()
@@ -233,6 +259,11 @@ class MainWindow:
 
             new_window.protocol("WM_DELETE_WINDOW", on_close)
             FirstCardTab(new_window)
+            
+            # Show window only after all setup is complete
+            new_window.deiconify()
+            new_window.focus_force()
+            
             self.update_status("Running First Card Validation")
 
         except Exception as e:
@@ -245,12 +276,31 @@ class MainWindow:
         try:
             from .tabs.machine_log_tab import MachineLogTab
             self.root.withdraw()
+            
+            # Create window but keep it withdrawn until fully configured
             new_window = tk.Toplevel(self.root)
+            new_window.withdraw()  # Keep hidden until fully ready
             new_window.title("Machine Log Validation")
-            new_window.geometry("1100x750")
             new_window.resizable(False, False)
             new_window.configure(bg=Theme.BG_MAIN)
-            self.center_child_window(new_window)
+            
+            # Set icon FIRST before geometry to ensure it's visible from start
+            try:
+                icon_path = self.get_icon_path()
+                if os.path.exists(icon_path):
+                    new_window.iconbitmap(icon_path)
+            except Exception as e:
+                print(f"Icon error: {e}")
+            
+            # Calculate center position and set geometry with position in ONE call
+            new_window.update_idletasks()
+            screen_width = new_window.winfo_screenwidth()
+            screen_height = new_window.winfo_screenheight()
+            window_width = 1100
+            window_height = 750
+            x = (screen_width - window_width) // 2
+            y = (screen_height - window_height) // 2
+            new_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
             def on_close():
                 new_window.destroy()
@@ -259,6 +309,11 @@ class MainWindow:
 
             new_window.protocol("WM_DELETE_WINDOW", on_close)
             MachineLogTab(new_window)
+            
+            # Show window only after all setup is complete
+            new_window.deiconify()
+            new_window.focus_force()
+            
             self.update_status("Running Machine Log Validation")
 
         except Exception as e:
@@ -271,12 +326,31 @@ class MainWindow:
         try:
             from .tabs.mno_file_tab import MNOFileTab
             self.root.withdraw()
+            
+            # Create window but keep it withdrawn until fully configured
             new_window = tk.Toplevel(self.root)
-            new_window.title("MNO File Validation")
-            new_window.geometry("900x800")
+            new_window.withdraw()  # Keep hidden until fully ready
+            new_window.title("Input/Output Files Validation")
             new_window.resizable(False, False)
             new_window.configure(bg=Theme.BG_MAIN)
-            self.center_child_window(new_window)
+            
+            # Set icon FIRST before geometry to ensure it's visible from start
+            try:
+                icon_path = self.get_icon_path()
+                if os.path.exists(icon_path):
+                    new_window.iconbitmap(icon_path)
+            except Exception as e:
+                print(f"Icon error: {e}")
+            
+            # Calculate center position and set geometry with position in ONE call
+            new_window.update_idletasks()
+            screen_width = new_window.winfo_screenwidth()
+            screen_height = new_window.winfo_screenheight()
+            window_width = 900
+            window_height = 750
+            x = (screen_width - window_width) // 2
+            y = (screen_height - window_height) // 2
+            new_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
             def on_close():
                 new_window.destroy()
@@ -285,6 +359,11 @@ class MainWindow:
 
             new_window.protocol("WM_DELETE_WINDOW", on_close)
             MNOFileTab(new_window)
+            
+            # Show window only after all setup is complete
+            new_window.deiconify()
+            new_window.focus_force()
+            
             self.update_status("Running MNO File Validation")
 
         except Exception as e:

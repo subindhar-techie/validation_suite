@@ -5,9 +5,10 @@ from PIL import Image as PILImage, ImageTk
 import threading
 import sys
 import os
-import tempfile  # <-- ADD THIS LINE
-import glob      # <-- ADD THIS LINE
-import datetime  # <-- ADD THIS LINE
+import tempfile
+import glob
+import datetime
+import re
 
 
 # Import resource_path function
@@ -33,27 +34,27 @@ if not os.path.exists(modules_path):
     if os.path.exists(dev_modules_path):
         modules_path = dev_modules_path
         print(f"First Card - Using development modules path: {modules_path}")
-    else:
-        print(f"First Card - Modules directory not found: {modules_path}")
 
 print(f"Final modules path: {modules_path}")
-
-# Debug: List all files in modules directory
-print("First Card - Contents of modules directory:")
-if os.path.exists(modules_path):
-    for root, dirs, files in os.walk(modules_path):
-        level = root.replace(modules_path, '').count(os.sep)
-        indent = ' ' * 2 * level
-        print(f'{indent}{os.path.basename(root)}/')
-        subindent = ' ' * 2 * (level + 1)
-        for file in files:
-            print(f'{subindent}{file}')
-else:
-    print(f"First Card - Modules directory does not exist: {modules_path}")
 
 # Add modules path to ensure imports work
 if modules_path not in sys.path:
     sys.path.insert(0, modules_path)
+    print(f"First Card - Added to sys.path: {modules_path}")
+
+try:
+    from first_card_validation.core.validation_engine import ValidationEngine
+    print("SUCCESS: Imported ValidationEngine")
+except ImportError as e:
+    print(f"First Card Import Error: {e}")
+    messagebox.showerror(
+        "Import Error", 
+        f"Cannot import ValidationEngine:\n{str(e)}\n\n"
+        f"Please check the modules directory structure."
+    )
+    sys.exit(1)
+
+
     print(f"First Card - Added to sys.path: {modules_path}")
 
 print(f"First Card Tab - sys.path: {sys.path}")
@@ -91,6 +92,20 @@ class FirstCardTab:
             'jio': [],
             'airtel': []
         }
+        # JIO/AIRTEL frame tracking for two-frame flow
+        self.jio_first_frame_shown = False
+        self.jio_second_frame_shown = False
+        self.airtel_first_frame_shown = False
+        self.airtel_second_frame_shown = False
+        
+        # JIO/AIRTEL frame references
+        self.jio_first_frame = None  # First form frame
+        self.jio_second_frame = None  # Second form frame (Shared with Airtel "Output files")
+        # Track JIO/AIRTEL field widgets for first and second frame
+        self.jio_first_frame_widgets = []
+        self.jio_second_frame_widgets = []
+        self.airtel_first_frame_widgets = []
+        self.airtel_second_frame_widgets = []
         self._clearing_in_progress = False
         self._validation_in_progress = False
         print("DEBUG: FirstCardTab initialized")
@@ -108,6 +123,7 @@ class FirstCardTab:
         self.cnum_entry = None
         self.scm_entry = None
         self.sim_oda_entry = None
+        self.perso_script_entry = None
         self.circle_entry = None
         self.image1_entry = None
         self.image2_entry = None
@@ -131,8 +147,12 @@ class FirstCardTab:
         self._clearing_in_progress = True
         
         try:
-            # Reset operator selection
+            # Get current operator
+            operator = self.operator_cb.get()
+            
+            # Reset operator selection and re-enable dropdown
             self.operator_cb.set("Select operator")
+            self.operator_cb.config(state="readonly")
             
             # Reset profile selection
             self.profile_cb.set("Select profile")
@@ -140,6 +160,8 @@ class FirstCardTab:
             # Clear all JIO entry fields
             self.ml_entry.delete(0, tk.END)
             self.pcom_entry.delete(0, tk.END)
+            if hasattr(self, 'perso_script_entry') and self.perso_script_entry:
+                self.perso_script_entry.delete(0, tk.END)
             self.cnum_entry.delete(0, tk.END)
             self.scm_entry.delete(0, tk.END)
             self.sim_oda_entry.delete(0, tk.END)
@@ -175,6 +197,9 @@ class FirstCardTab:
                     entry_widget.delete(0, tk.END)
                     print(f"✅ Cleared Airtel image entry {i}")
             
+            # Reset title
+            self.jio_first_frame.config(text="")
+            
             # Clear log output
             self.log_output.delete(1.0, tk.END)
             self.log_output.insert(tk.END, "All fields cleared. Please select an operator to continue...\n")
@@ -185,8 +210,33 @@ class FirstCardTab:
             for widget in self.operator_widgets['airtel'][1:]:  # Skip operator dropdown itself
                 widget.grid_remove()
             
-            # Hide back button
-            self.back_button.pack_forget()
+            # Also hide JIO second frame widgets
+            for widget in self.jio_second_frame_widgets:
+                widget.grid_remove()
+            
+            # Hide JIO second frame if shown
+            if hasattr(self, 'jio_second_frame') and self.jio_second_frame:
+                self.jio_second_frame.pack_forget()
+            
+            # Show JIO first frame
+            if hasattr(self, 'jio_first_frame') and self.jio_first_frame:
+                self.jio_first_frame.pack(padx=20, pady=10, fill="x")
+            
+            # Reset JIO frame tracking
+            self.jio_first_frame_shown = False
+            self.jio_second_frame_shown = False
+            
+            # Hide JIO-specific buttons, show default buttons
+            if hasattr(self, 'jio_back_button') and self.jio_back_button:
+                self.jio_back_button.pack_forget()
+            if hasattr(self, 'jio_clear_button') and self.jio_clear_button:
+                self.jio_clear_button.pack_forget()
+            if hasattr(self, 'jio_next_button') and self.jio_next_button:
+                self.jio_next_button.pack_forget()
+            if hasattr(self, 'run_button') and self.run_button:
+                self.run_button.pack(side="left", padx=5)
+            if hasattr(self, 'clear_all_button') and self.clear_all_button:
+                self.clear_all_button.pack(side="left", padx=5)
             
             # Show success message
             messagebox.showinfo("Cleared", "All fields (JIO and AIRTEL) have been cleared successfully!")
@@ -261,6 +311,17 @@ class FirstCardTab:
             entry_widget.insert(0, filename)
             print(f"✅ Selected SIM ODA file: {filename}")
 
+    def browse_perso_script_file(self, entry_widget):
+        """Browse for Perso Script File (.txt)"""
+        filename = filedialog.askopenfilename(
+            title="Select Perso Script File",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if filename:
+            entry_widget.delete(0, tk.END)
+            entry_widget.insert(0, filename)
+            print(f"✅ Selected Perso Script file: {filename}")
+
     def browse_image(self, entry):
         path = filedialog.askopenfilename(
             title="Select Image File",
@@ -274,6 +335,15 @@ class FirstCardTab:
     def reset_operator_selection(self):
         """Reset operator selection and hide all operator-specific fields"""
         self.operator_cb.set("Select operator")
+        self.operator_cb.config(state="readonly")  # Re-enable the dropdown
+        
+        # Hide JIO second frame if shown
+        if hasattr(self, 'jio_second_frame') and self.jio_second_frame:
+            self.jio_second_frame.pack_forget()
+        
+        # Show JIO first frame
+        if hasattr(self, 'jio_first_frame') and self.jio_first_frame:
+            self.jio_first_frame.pack(padx=20, pady=10, fill="x")
         
         # Hide all operator-specific fields
         for widget in self.operator_widgets['jio'][1:]:  # Skip operator dropdown itself
@@ -281,12 +351,258 @@ class FirstCardTab:
         for widget in self.operator_widgets['airtel'][1:]:  # Skip operator dropdown itself
             widget.grid_remove()
         
-        # Hide back button
-        self.back_button.pack_forget()
+        # Reset JIO frame tracking
+        self.jio_first_frame_shown = False
+        if hasattr(self, 'jio_second_frame') and self.jio_second_frame:
+            self.jio_second_frame.pack_forget()
+        if hasattr(self, 'jio_first_frame') and self.jio_first_frame:
+            self.jio_first_frame.pack(padx=20, pady=10, fill="x")
+        
+        # Reset frame tracking
+        self.jio_first_frame_shown = False
+        self.jio_second_frame_shown = False
+        self.airtel_first_frame_shown = False
+        self.airtel_second_frame_shown = False
+        
+        # Show Run and Clear All buttons, hide Next/Back
+        if hasattr(self, 'run_button') and self.run_button:
+            self.run_button.pack(side="left", padx=5)
+        if hasattr(self, 'clear_all_button') and self.clear_all_button:
+            self.clear_all_button.pack(side="left", padx=5)
+        
+        if hasattr(self, 'jio_next_button') and self.jio_next_button:
+            self.jio_next_button.pack_forget()
+        if hasattr(self, 'jio_back_button') and self.jio_back_button:
+            self.jio_back_button.pack_forget()
+        if hasattr(self, 'jio_clear_button') and self.jio_clear_button:
+            self.jio_clear_button.pack_forget()
         
         # Clear any validation logs
+        self.jio_first_frame.config(text="")
         self.log_output.delete(1.0, tk.END)
         self.log_output.insert(tk.END, "Please select an operator to continue...\n")
+
+    def jio_clear_current_frame(self):
+        """Clear only the current frame inputs for the active operator"""
+        if hasattr(self, '_clearing_in_progress') and self._clearing_in_progress:
+            return
+        
+        self._clearing_in_progress = True
+        
+        try:
+            operator = self.operator_cb.get()
+            
+            if operator == "JIO":
+                if self.jio_second_frame_shown:
+                    # Clear second frame fields (CNUM, SCM, SIM_ODA)
+                    self.cnum_entry.delete(0, tk.END)
+                    self.scm_entry.delete(0, tk.END)
+                    self.sim_oda_entry.delete(0, tk.END)
+                    self.log_output.delete(1.0, tk.END)
+                    self.log_output.insert(tk.END, "Second frame fields cleared. First frame inputs are preserved.\n")
+                else:
+                    # Clear first frame fields (Profile, ML, PCOM, Images)
+                    self.profile_cb.set("Select profile")
+                    self.ml_entry.delete(0, tk.END)
+                    self.pcom_entry.delete(0, tk.END)
+                    if hasattr(self, 'perso_script_entry') and self.perso_script_entry:
+                        self.perso_script_entry.delete(0, tk.END)
+                    self.image1_entry.delete(0, tk.END)
+                    self.image2_entry.delete(0, tk.END)
+                    self.image3_entry.delete(0, tk.END)
+                    self.image4_entry.delete(0, tk.END)
+                    self.image5_entry.delete(0, tk.END)
+                    self.circle_entry.delete(0, tk.END)
+                    self.log_output.delete(1.0, tk.END)
+                    self.log_output.insert(tk.END, "First frame fields cleared.\n")
+            
+            elif operator == "AIRTEL":
+                if self.airtel_second_frame_shown:
+                    # Clear Airtel second frame (CNUM, SIM ODA)
+                    self.airtel_cnum_entry.delete(0, tk.END)
+                    self.airtel_sim_oda_entry.delete(0, tk.END)
+                    self.log_output.delete(1.0, tk.END)
+                    self.log_output.insert(tk.END, "Airtel Step 2 fields cleared. Step 1 inputs preserved.\n")
+                else:
+                    # Clear Airtel first frame (ML, PCOM, INNER, OUTER)
+                    self.airtel_ml_entry.delete(0, tk.END)
+                    self.airtel_pcom_entry.delete(0, tk.END)
+                    self.airtel_image1_entry.delete(0, tk.END)
+                    self.airtel_image2_entry.delete(0, tk.END)
+                    self.log_output.delete(1.0, tk.END)
+                    self.log_output.insert(tk.END, "Airtel Step 1 fields cleared.\n")
+            
+            messagebox.showinfo("Cleared", "Current frame inputs cleared successfully!")
+            
+        except Exception as e:
+            print(f"❌ Error during JIO clear operation: {e}")
+            messagebox.showerror("Clear Error", f"Error clearing fields: {str(e)}")
+            
+        finally:
+            if hasattr(self, 'root'):
+                self.root.after(500, lambda: setattr(self, '_clearing_in_progress', False))
+
+    def jio_show_second_frame(self):
+        """Show the second frame for JIO (replaces first frame)"""
+        # Validate first frame has required fields
+        profile = self.profile_cb.get()
+        ml_path = self.ml_entry.get().strip()
+        pcom_path = self.pcom_entry.get().strip()
+        
+        missing_fields = []
+        if profile not in ["MOB", "WBIOT", "NBIOT"]:
+            missing_fields.append("Profile Type")
+        if not ml_path:
+            missing_fields.append("Machine Log")
+        if not pcom_path:
+            missing_fields.append("PCOM")
+        
+        if missing_fields:
+            error_message = "Please select the following required fields before proceeding:\n"
+            for field in missing_fields:
+                error_message += f"• {field}\n"
+            messagebox.showerror("Missing Fields", error_message)
+            return
+        
+        # Hide the first frame
+        if hasattr(self, 'jio_first_frame') and self.jio_first_frame:
+            self.jio_first_frame.pack_forget()
+        
+        # Show the second frame
+        if hasattr(self, 'jio_second_frame') and self.jio_second_frame:
+            self.jio_second_frame.pack(padx=20, pady=10, fill="x")
+            # Show all widgets in the second frame
+            for widget in self.jio_second_frame_widgets:
+                widget.grid()
+        
+        # Update the window to ensure proper layout
+        self.root.update_idletasks()
+        
+        self.jio_second_frame_shown = True
+        
+        # Hide Next button
+        if hasattr(self, 'jio_next_button') and self.jio_next_button:
+            self.jio_next_button.pack_forget()
+        
+        # Show Run button for JIO second frame
+        if hasattr(self, 'run_button') and self.run_button:
+            self.run_button.pack(side="left", padx=5)
+        
+        # Show Clear button (for second frame)
+        if hasattr(self, 'jio_clear_button') and self.jio_clear_button:
+            self.jio_clear_button.pack(side="left", padx=5)
+        
+        # Show JIO back button
+        if hasattr(self, 'jio_back_button') and self.jio_back_button:
+            self.jio_back_button.pack(side="left", padx=5)
+            
+        self.log_output.delete(1.0, tk.END)
+        self.log_output.insert(tk.END, "Please select the CNUM, SCM, and SIM ODA files.\n")
+
+    def jio_back_to_first_frame(self):
+        """Go back to the first frame for JIO"""
+        # Hide the second frame
+        if hasattr(self, 'jio_second_frame') and self.jio_second_frame:
+            self.jio_second_frame.pack_forget()
+        
+        # Show the first frame
+        if hasattr(self, 'jio_first_frame') and self.jio_first_frame:
+            self.jio_first_frame.pack(padx=20, pady=10, fill="x")
+            # Show JIO first frame widgets
+            for widget in self.jio_first_frame_widgets:
+                widget.grid()
+            # Hide JIO second frame widgets
+            for widget in self.jio_second_frame_widgets:
+                widget.grid_remove()
+        
+        self.jio_second_frame_shown = False
+        
+        # Show Next button
+        if hasattr(self, 'jio_next_button') and self.jio_next_button:
+            self.jio_next_button.pack(side="left", padx=5)
+        
+        # Hide Run button
+        if hasattr(self, 'run_button') and self.run_button:
+            self.run_button.pack_forget()
+            
+        # Hide back button (in first step)
+        if hasattr(self, 'jio_back_button') and self.jio_back_button:
+            self.jio_back_button.pack_forget()
+            
+        self.log_output.delete(1.0, tk.END)
+        self.log_output.insert(tk.END, "Back to First Frame. First frame inputs have been preserved.\n")
+
+    def airtel_show_second_frame(self):
+        """Show the second frame for AIRTEL (replaces first frame)"""
+        # [REFINED] Machine Log and PCOM are mandatory to proceed to Step 2
+        ml_path = self.airtel_ml_entry.get().strip()
+        pcom_path = self.airtel_pcom_entry.get().strip()
+        
+        missing_fields = []
+        if not ml_path: missing_fields.append("Machine Log")
+        if not pcom_path: missing_fields.append("PCOM")
+        
+        if missing_fields:
+            error_message = "Please select the following required fields before proceeding:\n"
+            for field in missing_fields:
+                error_message += f"• {field}\n"
+            messagebox.showerror("Missing Fields", error_message)
+            return
+
+        self.log_output.delete(1.0, tk.END)
+        self.log_output.insert(tk.END, "Airtel: Machine Log and PCOM verified. Proceeding to Step 2.\n")
+
+        # Hide the first frame
+        if hasattr(self, 'jio_first_frame') and self.jio_first_frame:
+            self.jio_first_frame.pack_forget()
+        
+        # Show the second frame
+        if hasattr(self, 'jio_second_frame') and self.jio_second_frame:
+            self.jio_second_frame.pack(padx=20, pady=10, fill="x")
+            # Show AIRTEL second frame widgets
+            for widget in self.airtel_second_frame_widgets:
+                widget.grid()
+            # Hide AIRTEL first frame widgets (if they were in second frame container, but they are in form_frame)
+            # Actually AIRTEL Step 1 is in form_frame, and Step 2 is in self.jio_second_frame.
+        
+        self.root.update_idletasks()
+        self.airtel_second_frame_shown = True
+        
+        # Update button visibility
+        if hasattr(self, 'jio_next_button') and self.jio_next_button:
+            self.jio_next_button.pack_forget()
+        if hasattr(self, 'run_button') and self.run_button:
+            self.run_button.pack(side="left", padx=5)
+        if hasattr(self, 'jio_clear_button') and self.jio_clear_button:
+            self.jio_clear_button.pack(side="left", padx=5)
+        if hasattr(self, 'jio_back_button') and self.jio_back_button:
+            self.jio_back_button.pack(side="left", padx=5)
+            
+        self.log_output.delete(1.0, tk.END)
+        self.log_output.insert(tk.END, "Please select the CNUM and SIM ODA files.\n")
+
+    def airtel_back_to_first_frame(self):
+        """Go back to the first frame for AIRTEL"""
+        if hasattr(self, 'jio_second_frame') and self.jio_second_frame:
+            self.jio_second_frame.pack_forget()
+        
+        if hasattr(self, 'jio_first_frame') and self.jio_first_frame:
+            self.jio_first_frame.pack(padx=20, pady=10, fill="x")
+            # Show AIRTEL first frame widgets
+            for widget in self.airtel_first_frame_widgets:
+                widget.grid()
+        
+        self.airtel_second_frame_shown = False
+        
+        if hasattr(self, 'jio_next_button') and self.jio_next_button:
+            self.jio_next_button.pack(side="left", padx=5)
+        if hasattr(self, 'run_button') and self.run_button:
+            self.run_button.pack_forget()
+        if hasattr(self, 'jio_back_button') and self.jio_back_button:
+            self.jio_back_button.pack_forget()
+            
+        self.log_output.delete(1.0, tk.END)
+        self.log_output.insert(tk.END, "Back to Airtel Step 1. Inputs preserved.\n")
 
     def run_validation(self):
         # Prevent multiple validation runs
@@ -556,6 +872,7 @@ class FirstCardTab:
                 # JIO validation logic
                 profile = self.profile_cb.get()
                 circle_val = self.circle_entry.get().strip()
+                perso_script_path = self.perso_script_entry.get().strip() if hasattr(self, 'perso_script_entry') and self.perso_script_entry else ""
                 paths = [self.ml_entry.get(), self.pcom_entry.get(), self.cnum_entry.get(), self.scm_entry.get(), self.sim_oda_entry.get()]
                 image_paths = [self.image1_entry.get(), self.image2_entry.get(), self.image3_entry.get(), self.image4_entry.get()]
                 if self.image5_entry.get():
@@ -607,6 +924,8 @@ class FirstCardTab:
 
                 # --- START THREADED VALIDATION ---
                 self.run_button.config(text="⌛ Please Wait...", state="disabled")
+                self.progress_bar.pack(side="left", padx=10, fill="x", expand=True)  # Show progress bar
+                self.progress_bar.start(10)  # Start indeterminate animation (10ms interval)
                 self.log_output.insert(tk.END, "\n" + "="*50 + "\n")
                 self.log_output.insert(tk.END, "🚀 INITIALIZATION COMPLETE. STARTING VALIDATION...\n")
                 self.log_output.insert(tk.END, "⏳ PLEASE WAIT: Processing images and SCM data...\n")
@@ -627,7 +946,8 @@ class FirstCardTab:
                             scm_path=paths[3],
                             sim_oda_path=paths[4],
                             image_paths=image_paths,
-                            circle_value=circle_val
+                            circle_value=circle_val,
+                            perso_script_path=perso_script_path
                         )
 
                         # Callback to UI
@@ -718,67 +1038,44 @@ class FirstCardTab:
                         self.log_output.insert(tk.END, f"⚠️  Could not read PCOM file: {str(e)}\n")
                         self.log_output.insert(tk.END, f"   Proceeding with validation...\n\n")
                 
-                # Check if files actually exist and are selected
-                missing_files = []
-                if not ml_path or not os.path.exists(ml_path):
-                    missing_files.append("Machine Log")
-                if not cnum_path or not os.path.exists(cnum_path):
-                    missing_files.append("CNUM")
-                if not sim_oda_path or not os.path.exists(sim_oda_path):
-                    missing_files.append("SIM ODA")
-                    
-                if missing_files:
-                    error_message = "Please select the following required files for Airtel validation:\n"
-                    for file in missing_files:
-                        error_message += f"• {file}\n"
-                    messagebox.showerror("File Selection Error", error_message)
-                    self._validation_in_progress = False
-                    return
+                # [LIBERAL] No mandatory file checks for Airtel - allow running even if empty
+                if not ml_path or not cnum_path or not sim_oda_path:
+                    self.log_output.insert(tk.END, "⚠️  Warning: Some Airtel files are missing. Running in liberal mode...\n")
 
-                try:
-                    from first_card_validation.core.airtel_validation import main_airtel as run_airtel_validation
-                    
-                    self.log_output.insert(tk.END, "Starting AIRTEL validation...\n")
-                    self.log_output.insert(tk.END, f"📸 Images to process: {len(airtel_image_paths)}\n")
-                    self.log_output.update()
-                    
-                    report_path, validation_errors = run_airtel_validation(
-                        filepath=ml_path,
-                        pcom_path=pcom_path,
-                        cnum_path=cnum_path,
-                        sim_oda_path=sim_oda_path,
-                        image_paths=airtel_image_paths
-                    )
+                # --- START THREADED AIRTEL VALIDATION ---
+                self.run_button.config(text="⌛ Please Wait...", state="disabled")
+                self.progress_bar.pack(side="left", padx=10, fill="x", expand=True)  # Show progress bar
+                self.progress_bar.start(10)  # Start indeterminate animation (10ms interval)
+                
+                self.log_output.insert(tk.END, "\n" + "="*50 + "\n")
+                self.log_output.insert(tk.END, "🚀 STARTING AIRTEL VALIDATION...\n")
+                self.log_output.insert(tk.END, "⏳ PLEASE WAIT: Processing images and data...\n")
+                self.log_output.insert(tk.END, "="*50 + "\n\n")
+                self.log_output.see(tk.END)
+                self.log_output.update()
 
-                    if not report_path:
-                        self.log_output.insert(tk.END, "❌ AIRTEL validation failed to generate report!\n")
-                        if validation_errors:
-                            self.log_output.insert(tk.END, "Errors returned:\n")
-                            for error in validation_errors:
-                                self.log_output.insert(tk.END, f"• {error}\n")
-                        messagebox.showerror("AIRTEL Report Generation Failed", "Failed to generate AIRTEL report. Check the log for details.")
-                        return
-                    
-                    if report_path and os.path.exists(report_path):
-                        self.log_output.insert(tk.END, f"✅ AIRTEL Validation completed successfully.\n")
-                        self.log_output.insert(tk.END, f"📄 Report saved at: {report_path}\n\n")
+                def airtel_thread_func():
+                    try:
+                        from first_card_validation.core.airtel_validation import main_airtel as run_airtel_validation
                         
-                        if validation_errors:
-                            self.log_output.insert(tk.END, "❌ DATA FIELD VALIDATION ERRORS:\n")
-                            self.log_output.insert(tk.END, "=" * 50 + "\n")
-                            for error in validation_errors:
-                                self.log_output.insert(tk.END, f"• {error}\n")
-                            self.log_output.insert(tk.END, "=" * 50 + "\n")
-                            messagebox.showwarning("Validation Completed with Errors", f"AIRTEL validation completed with errors.")
-                        else:
-                            self.log_output.insert(tk.END, "✅ All Airtel data fields validated successfully!\n")
-                            messagebox.showinfo("Success", "AIRTEL validation completed successfully!")
-                    
-                    self.log_output.see(tk.END)
+                        report_path, validation_errors = run_airtel_validation(
+                            filepath=ml_path,
+                            pcom_path=pcom_path,
+                            cnum_path=cnum_path,
+                            sim_oda_path=sim_oda_path,
+                            image_paths=airtel_image_paths
+                        )
 
-                except Exception as e:
-                    self.log_output.insert(tk.END, f"❌ AIRTEL Validation Error: {str(e)}\n")
-                    messagebox.showerror("AIRTEL Exception", str(e))
+                        # Callback to UI
+                        self.parent.after(0, lambda: self.on_validation_complete(report_path, validation_errors))
+                    except Exception as e:
+                        import traceback
+                        traceback.print_exc()
+                        err_msg = str(e)
+                        self.parent.after(0, lambda: self.on_validation_error(err_msg))
+
+                threading.Thread(target=airtel_thread_func, daemon=True).start()
+                return # Exit main thread, UI remains interactive
         
         finally:
             # Reset flag after validation completes
@@ -789,45 +1086,180 @@ class FirstCardTab:
         """Show/hide fields based on operator selection"""
         operator = self.operator_cb.get()
         
+        # Disable operator dropdown after selection to prevent changing operators
+        if operator in ["JIO", "AIRTEL"]:
+            self.operator_cb.config(state="disabled")
+        
         # Clear log and update message based on operator selection
         self.log_output.delete(1.0, tk.END)
         
         if operator == "JIO":
-            # Show all JIO fields (including profile dropdown)
-            for widget in self.operator_widgets['jio']:
-                if widget != self.operator_cb:  # Don't hide the operator dropdown itself
-                    widget.grid()
+            # Select correct Back button command
+            self.jio_back_button.config(command=self.jio_back_to_first_frame)
+            # Select correct Next button command
+            self.jio_next_button.config(command=self.jio_show_second_frame)
+            
+            # Set dynamic title
+            self.jio_first_frame.config(text="1st card results logs")
+            # Reset JIO frame tracking
+            self.jio_first_frame_shown = True
+            self.jio_second_frame_shown = False
+            
+            # Hide second frame if shown, show first frame
+            if hasattr(self, 'jio_second_frame') and self.jio_second_frame:
+                self.jio_second_frame.pack_forget()
+            if hasattr(self, 'jio_first_frame') and self.jio_first_frame:
+                self.jio_first_frame.pack(padx=20, pady=10, fill="x")
+            
+            # Show JIO first frame widgets only (Profile, ML, PCOM, Images)
+            for widget in self.jio_first_frame_widgets:
+                widget.grid()
+            
+            # Hide JIO second frame widgets (CNUM, SCM, SIM_ODA)
+            for widget in self.jio_second_frame_widgets:
+                widget.grid_remove()
+            
             # Hide Airtel specific fields
             for widget in self.operator_widgets['airtel']:
                 if widget != self.operator_cb:  # Don't hide the operator dropdown itself
                     widget.grid_remove()
-            # Show back button
-            self.back_button.pack(pady=5)
+            
+            # Hide Run and Clear All buttons
+            if hasattr(self, 'run_button') and self.run_button:
+                self.run_button.pack_forget()
+            if hasattr(self, 'clear_all_button') and self.clear_all_button:
+                self.clear_all_button.pack_forget()
+            
+            # Show JIO-specific buttons
+            if hasattr(self, 'jio_back_button') and self.jio_back_button:
+                self.jio_back_button.pack_forget() # Hidden on first step
+            if hasattr(self, 'jio_clear_button') and self.jio_clear_button:
+                self.jio_clear_button.pack(side="left", padx=5)
+            if hasattr(self, 'jio_next_button') and self.jio_next_button:
+                self.jio_next_button.pack(side="left", padx=5)
+            
+            # Show buttons and logs in correct order
+            if hasattr(self, 'button_frame'):
+                self.button_frame.pack(pady=10)
+            if hasattr(self, 'log_frame'):
+                self.log_frame.pack_forget() # Repack to ensure it's at the bottom
+                self.log_frame.pack(padx=20, pady=(0, 15), fill="both", expand=True)
+
             self.log_output.insert(tk.END, "JIO operator selected. Please select profile type and required files.\n")
             
         elif operator == "AIRTEL":
-            # Hide JIO specific fields
-            for widget in self.operator_widgets['jio']:
-                if widget != self.operator_cb:  # Don't hide the operator dropdown itself
-                    widget.grid_remove()
-            # Show Airtel fields
-            for widget in self.operator_widgets['airtel']:
-                if widget != self.operator_cb:  # Don't hide the operator dropdown itself
-                    widget.grid()
-            # Show back button
-            self.back_button.pack(pady=5)
+            # Select correct Back button command
+            self.jio_back_button.config(command=self.airtel_back_to_first_frame)
+            # Select correct Next button command
+            self.jio_next_button.config(command=self.airtel_show_second_frame)
+            
+            # Set dynamic title
+            self.jio_first_frame.config(text="1st card results logs")
+            # Reset JIO frame tracking
+            self.jio_first_frame_shown = False
+            self.jio_second_frame_shown = False
+            
+            # Hide JIO frames
+            if hasattr(self, 'jio_second_frame') and self.jio_second_frame:
+                self.jio_second_frame.pack_forget()
+            if hasattr(self, 'jio_first_frame') and self.jio_first_frame:
+                self.jio_first_frame.pack(padx=20, pady=10, fill="x")
+            
+            # Hide JIO first frame widgets
+            for widget in self.jio_first_frame_widgets:
+                widget.grid_remove()
+            # Hide JIO second frame widgets
+            for widget in self.jio_second_frame_widgets:
+                widget.grid_remove()
+            
+            # Hide JIO-specific buttons, Run and Clear All buttons
+            if hasattr(self, 'jio_back_button') and self.jio_back_button:
+                self.jio_back_button.pack_forget()
+            if hasattr(self, 'jio_clear_button') and self.jio_clear_button:
+                self.jio_clear_button.pack_forget()
+            if hasattr(self, 'jio_next_button') and self.jio_next_button:
+                self.jio_next_button.pack_forget()
+            
+            # Hide Run and Clear All buttons
+            if hasattr(self, 'run_button') and self.run_button:
+                self.run_button.pack_forget()
+            if hasattr(self, 'clear_all_button') and self.clear_all_button:
+                self.clear_all_button.pack_forget()
+            
+            # Show buttons and logs in correct order
+            if hasattr(self, 'button_frame'):
+                self.button_frame.pack(pady=10)
+            if hasattr(self, 'log_frame'):
+                self.log_frame.pack_forget() # Repack to ensure it's at the bottom
+                self.log_frame.pack(padx=20, pady=(0, 15), fill="both", expand=True)
+            
+            # Show Airtel Step 1 buttons
+            if hasattr(self, 'jio_back_button') and self.jio_back_button:
+                self.jio_back_button.pack_forget()
+            if hasattr(self, 'jio_clear_button') and self.jio_clear_button:
+                self.jio_clear_button.pack(side="left", padx=5)
+            if hasattr(self, 'jio_next_button') and self.jio_next_button:
+                self.jio_next_button.pack(side="left", padx=5)
+            
+            # Show Airtel Step 1 fields
+            for widget in self.airtel_first_frame_widgets:
+                widget.grid()
+            # Hide Airtel Step 2 fields
+            for widget in self.airtel_second_frame_widgets:
+                widget.grid_remove()
+            
             self.log_output.insert(tk.END, "AIRTEL operator selected. Please select required files.\n")
         else:
-            # No operator selected, hide back button and all operator-specific fields
+            # No operator selected, hide all operator-specific fields
             for widget in self.operator_widgets['jio'][1:]:  # Skip operator dropdown
                 widget.grid_remove()
             for widget in self.operator_widgets['airtel'][1:]:  # Skip operator dropdown
                 widget.grid_remove()
-            self.back_button.pack_forget()
+            
+            # Reset JIO frame tracking
+            self.jio_first_frame_shown = False
+            self.jio_second_frame_shown = False
+            
+            # Hide JIO frames
+            if hasattr(self, 'jio_second_frame') and self.jio_second_frame:
+                self.jio_second_frame.pack_forget()
+            if hasattr(self, 'jio_first_frame') and self.jio_first_frame:
+                self.jio_first_frame.pack(padx=20, pady=10, fill="x")
+            
+            # Hide JIO-specific buttons, show default buttons
+            if hasattr(self, 'jio_back_button') and self.jio_back_button:
+                self.jio_back_button.pack_forget()
+            if hasattr(self, 'jio_clear_button') and self.jio_clear_button:
+                self.jio_clear_button.pack_forget()
+            if hasattr(self, 'jio_next_button') and self.jio_next_button:
+                self.jio_next_button.pack_forget()
+            
+            if hasattr(self, 'run_button') and self.run_button:
+                self.run_button.pack_forget()
+            if hasattr(self, 'clear_all_button') and self.clear_all_button:
+                self.clear_all_button.pack_forget()
+            
+            # Hide buttons and logs
+            if hasattr(self, 'button_frame'):
+                self.button_frame.pack_forget()
+            if hasattr(self, 'log_frame'):
+                self.log_frame.pack(padx=20, pady=(0, 15), fill="both", expand=True)
+
             self.log_output.insert(tk.END, "Please select an operator to continue...\n")
 
     def get_icon_path(self):
         """Get the absolute path to the application icon"""
+        # Try using resource_path for exe compatibility
+        try:
+            from runtime_hook import resource_path
+            icon_path = resource_path(r"assets/icons/RTL_logo.ico")
+            if os.path.exists(icon_path):
+                print(f"First Card - Icon found via resource_path: {icon_path}")
+                return icon_path
+        except Exception as e:
+            print(f"resource_path error: {e}")
+        
+        # Fallback to direct paths
         icon_paths = [
             r"D:\Jio_Validation_Suite\assets\icons\RTL_logo.ico",
         ]
@@ -881,10 +1313,10 @@ class FirstCardTab:
             print("First Card - Using default system icon")
             self.create_header_without_icon()
 
+        # Only set title, DO NOT reset geometry - it's already centered from main_window
         self.root.title("Validator Tool Version 1.1")
-        self.root.geometry("820x750")  # Increased height to accommodate back button
         self.root.configure(bg="#e9edf0")
-        self.root.resizable(False, False)
+        self.root.resizable(False, True)  # Allow vertical resizing for JIO two-step flow
 
         style = ttk.Style(self.root)
         style.theme_use("clam")
@@ -912,10 +1344,21 @@ class FirstCardTab:
 
     def create_form_elements(self):
         """Create the form elements (moved from launch_gui for better organization)"""
-        # === Form Frame ===
-        form_frame = tk.LabelFrame(self.root, text="Input File Selection", bg="#f8f9fa", font=("Segoe UI", 10))
-        form_frame.pack(padx=20, pady=10, fill="x")
+        # === Input Container (Top) ===
+        self.input_container = tk.Frame(self.root, bg="#f8f9fa")
+        self.input_container.pack(side="top", fill="x")
 
+        # === Form Frame ===
+        form_frame = tk.LabelFrame(self.input_container, text="", bg="#f8f9fa", font=("Segoe UI", 10))
+        form_frame.pack(padx=20, pady=10, fill="x")
+        
+        # Store reference to first form frame
+        self.jio_first_frame = form_frame
+        
+        # === JIO Second Frame (Initially Hidden) ===
+        self.jio_second_frame = tk.LabelFrame(self.input_container, text="Output files", bg="#f8f9fa", font=("Segoe UI", 10))
+        # Will be packed later when needed
+        
         row = 0
         
         # Operator Selection
@@ -942,21 +1385,34 @@ class FirstCardTab:
         self.circle_entry.grid(row=row, column=3, pady=4, padx=4, sticky="w")
         
         self.operator_widgets['jio'].extend([profile_label, self.profile_cb, circle_lbl, self.circle_entry])
+        
+        # Add Profile and Circle to first frame widgets
+        self.jio_first_frame_widgets.extend([profile_label, self.profile_cb, circle_lbl, self.circle_entry])
+        
+        # Perso Script File field (below Profile Type)
+        row += 1
+        perso_script_label = ttk.Label(form_frame, text="Perso Script File:")
+        perso_script_label.grid(row=row, column=0, sticky="e", pady=4, padx=8)
+        self.perso_script_entry = ttk.Entry(form_frame, width=55)
+        self.perso_script_entry.grid(row=row, column=1, pady=4, sticky="w")
+        perso_script_btn = ttk.Button(form_frame, text="Browse", width=10,
+                command=lambda e=self.perso_script_entry: self.browse_perso_script_file(e))
+        perso_script_btn.grid(row=row, column=2, padx=6)
+        
+        self.operator_widgets['jio'].extend([perso_script_label, self.perso_script_entry, perso_script_btn])
+        self.jio_first_frame_widgets.extend([perso_script_label, self.perso_script_entry, perso_script_btn])
 
         # Create separate entry lists for each operator
         jio_entries = []
         airtel_entries = []
 
-        # JIO file inputs
-        jio_file_inputs = [
+        # JIO file inputs - FIRST FRAME (ML, PCOM only)
+        jio_first_frame_inputs = [
             ("Machine Log (.txt)", self.browse_ml_file),
-            ("PCOM (.L00, .L07)", self.browse_pcom_file),
-            ("CNUM (.txt)", lambda e: self.browse_cnum_file(e, "jio")),
-            ("SCM (.txt)", self.browse_scm_file),
-            ("SIM ODA (.cps)", self.browse_sim_oda_file)
+            ("PCOM (.L00, .L07)", self.browse_pcom_file)
         ]
 
-        for label, browse_func in jio_file_inputs:
+        for label, browse_func in jio_first_frame_inputs:
             row += 1
             lbl = ttk.Label(form_frame, text=label + ":")
             lbl.grid(row=row, column=0, sticky="e", pady=4, padx=8)
@@ -967,8 +1423,9 @@ class FirstCardTab:
             btn.grid(row=row, column=2, padx=6)
             jio_entries.append(ent)
             self.operator_widgets['jio'].extend([lbl, ent, btn])
+            self.jio_first_frame_widgets.extend([lbl, ent, btn])
 
-        # JIO image labels
+        # JIO image labels - FIRST FRAME
         jio_image_labels = [
             "INNER LABEL 100", "INNER LABEL 500",
             "OUTER LABEL 5000", "ARTWORK FRONT", "ARTWORK BACK"
@@ -987,18 +1444,46 @@ class FirstCardTab:
             jio_entries.append(ent)
             image_rows[img_label] = (lbl, ent, btn)
             self.operator_widgets['jio'].extend([lbl, ent, btn])
+            self.jio_first_frame_widgets.extend([lbl, ent, btn])
 
-        # AIRTEL file inputs (with proper file types) - INCLUDING PCOM
-        airtel_file_inputs = [
-            ("Machine Log (.txt)", self.browse_ml_file),
-            ("PCOM (.L00, .L07)", self.browse_pcom_file),  # PCOM added for Airtel
-            ("CNUM (.out)", lambda e: self.browse_cnum_file(e, "airtel")),
+        # JIO file inputs - SECOND FRAME (CNUM, SCM, SIM_ODA) - in separate frame
+        jio_second_frame_inputs = [
+            ("CNUM (.txt)", lambda e: self.browse_cnum_file(e, "jio")),
+            ("SCM (.txt)", self.browse_scm_file),
             ("SIM ODA (.cps)", self.browse_sim_oda_file)
+        ]
+
+        # Create second frame widgets
+        second_frame_row = 1
+        
+        # Operator display in second frame
+        # jio_second_frame_label = ttk.Label(self.jio_second_frame, text="Operator: JIO (Step 2 of 2)")
+        # jio_second_frame_label.grid(row=0, column=0, columnspan=3, sticky="w", pady=10, padx=8)
+        # self.jio_second_frame_widgets.extend([jio_second_frame_label])
+        
+        for label, browse_func in jio_second_frame_inputs:
+            second_frame_row += 1
+            lbl = ttk.Label(self.jio_second_frame, text=label + ":")
+            lbl.grid(row=second_frame_row, column=0, sticky="e", pady=4, padx=8)
+            ent = ttk.Entry(self.jio_second_frame, width=55)
+            ent.grid(row=second_frame_row, column=1, pady=4, sticky="w")
+            btn = ttk.Button(self.jio_second_frame, text="Browse", width=10,
+                    command=lambda e=ent, f=browse_func: f(e))
+            btn.grid(row=second_frame_row, column=2, padx=6)
+            jio_entries.append(ent)
+            self.operator_widgets['jio'].extend([lbl, ent, btn])
+            # Add to second frame widgets
+            self.jio_second_frame_widgets.extend([lbl, ent, btn])
+
+        # AIRTEL file inputs - FIRST FRAME (ML, PCOM ONLY)
+        airtel_first_frame_inputs = [
+            ("Machine Log (.txt)", self.browse_ml_file),
+            ("PCOM (.L00, .L07)", self.browse_pcom_file)
         ]
 
         row_airtel = 1  # Start from row 1 for Airtel (after operator selection)
 
-        for label, browse_func in airtel_file_inputs:
+        for label, browse_func in airtel_first_frame_inputs:
             lbl = ttk.Label(form_frame, text=label + ":")
             lbl.grid(row=row_airtel, column=0, sticky="e", pady=4, padx=8)
             ent = ttk.Entry(form_frame, width=55)
@@ -1008,11 +1493,12 @@ class FirstCardTab:
             btn.grid(row=row_airtel, column=2, padx=6)
             airtel_entries.append(ent)
             self.operator_widgets['airtel'].extend([lbl, ent, btn])
+            self.airtel_first_frame_widgets.extend([lbl, ent, btn])
             row_airtel += 1
 
-        # AIRTEL image labels (only INNER and OUTER labels)
+        # AIRTEL image labels - FIRST FRAME
         airtel_image_labels = ["INNER LABEL", "OUTER LABEL"]
-        airtel_image_entries = []  # NEW: Store AIRTEL image entries separately
+        airtel_image_entries = []
 
         for img_label in airtel_image_labels:
             lbl = ttk.Label(form_frame, text=img_label + ":")
@@ -1023,40 +1509,67 @@ class FirstCardTab:
                             command=lambda e=ent: self.browse_image(e))
             btn.grid(row=row_airtel, column=2, padx=6)
             airtel_entries.append(ent)
-            airtel_image_entries.append(ent)  # NEW: Store in separate list
+            airtel_image_entries.append(ent)
             self.operator_widgets['airtel'].extend([lbl, ent, btn])
+            self.airtel_first_frame_widgets.extend([lbl, ent, btn])
             row_airtel += 1
+
+        # AIRTEL file inputs - SECOND FRAME (CNUM, SIM ODA)
+        airtel_second_frame_inputs = [
+            ("CNUM (.out)", lambda e: self.browse_cnum_file(e, "airtel")),
+            ("SIM ODA (.cps)", self.browse_sim_oda_file)
+        ]
+
+        # Use second frame for these
+        airtel_second_frame_row = second_frame_row # Continue from JIO's second frame rows if needed, or restart
+        # Note: self.jio_second_frame is shared now as "Output files"
+        
+        for label, browse_func in airtel_second_frame_inputs:
+            airtel_second_frame_row += 1
+            lbl = ttk.Label(self.jio_second_frame, text=label + ":")
+            lbl.grid(row=airtel_second_frame_row, column=0, sticky="e", pady=4, padx=8)
+            ent = ttk.Entry(self.jio_second_frame, width=55)
+            ent.grid(row=airtel_second_frame_row, column=1, pady=4, sticky="w")
+            btn = ttk.Button(self.jio_second_frame, text="Browse", width=10,
+                    command=lambda e=ent, f=browse_func: f(e))
+            btn.grid(row=airtel_second_frame_row, column=2, padx=6)
+            airtel_entries.append(ent)
+            self.operator_widgets['airtel'].extend([lbl, ent, btn])
+            self.airtel_second_frame_widgets.extend([lbl, ent, btn])
 
         # FIXED ENTRY ASSIGNMENTS
         # JIO entries
         if len(jio_entries) >= 10:
-            self.ml_entry, self.pcom_entry, self.cnum_entry, self.scm_entry, self.sim_oda_entry, \
-            self.image1_entry, self.image2_entry, self.image3_entry, self.image4_entry, self.image5_entry = jio_entries[:10]
-            # Circle entry (self.circle_entry) is assigned explicitly in Row 1 logic
+            # Creation order: 
+            # 0: Machine Log, 1: PCOM
+            # 2-6: Images (100, 500, 5000, Front, Back)
+            # 7: CNUM, 8: SCM, 9: SIM ODA
+            self.ml_entry = jio_entries[0]
+            self.pcom_entry = jio_entries[1]
+            self.image1_entry = jio_entries[2]
+            self.image2_entry = jio_entries[3]
+            self.image3_entry = jio_entries[4]
+            self.image4_entry = jio_entries[5]
+            self.image5_entry = jio_entries[6]
+            self.cnum_entry = jio_entries[7]
+            self.scm_entry = jio_entries[8]
+            self.sim_oda_entry = jio_entries[9]
             print("[PASS] JIO entries assigned successfully")
 
         # AIRTEL entries - SPECIFIC ENTRIES FOR AIRTEL
-        if len(airtel_entries) >= 6:  # Changed from 4 to 6 (4 files + 2 images)
-            self.airtel_ml_entry = airtel_entries[0]  # Machine Log
-            self.airtel_pcom_entry = airtel_entries[1]  # PCOM
-            self.airtel_cnum_entry = airtel_entries[2]  # CNUM
-            self.airtel_sim_oda_entry = airtel_entries[3]  # SIM ODA
+        if len(airtel_entries) >= 6:
+            # Creation order:
+            # 0: Machine Log, 1: PCOM
+            # 2: INNER LABEL, 3: OUTER LABEL
+            # 4: CNUM, 5: SIM ODA
+            self.airtel_ml_entry = airtel_entries[0]
+            self.airtel_pcom_entry = airtel_entries[1]
+            self.airtel_image1_entry = airtel_entries[2]
+            self.airtel_image2_entry = airtel_entries[3]
+            self.airtel_cnum_entry = airtel_entries[4]
+            self.airtel_sim_oda_entry = airtel_entries[5]
             
-            # NEW: Assign AIRTEL image entries
-            if len(airtel_image_entries) >= 2:
-                self.airtel_image1_entry = airtel_image_entries[0]  # INNER LABEL
-                self.airtel_image2_entry = airtel_image_entries[1]  # OUTER LABEL
-                print("[PASS] Airtel image entries assigned successfully")
-            
-            print("[PASS] Airtel-specific entries assigned successfully")
-            print(f"   ML: {self.airtel_ml_entry}")
-            print(f"   PCOM: {self.airtel_pcom_entry}")
-            print(f"   CNUM: {self.airtel_cnum_entry}")
-            print(f"   SIM ODA: {self.airtel_sim_oda_entry}")
-            if hasattr(self, 'airtel_image1_entry'):
-                print(f"   Image 1 (INNER): {self.airtel_image1_entry}")
-            if hasattr(self, 'airtel_image2_entry'):
-                print(f"   Image 2 (OUTER): {self.airtel_image2_entry}")
+            print("[PASS] Airtel entries assigned successfully")
         else:
             print(f"[FAIL] Not enough Airtel entries: {len(airtel_entries)}")
 
@@ -1080,34 +1593,52 @@ class FirstCardTab:
             widget.grid_remove()
         for widget in self.operator_widgets['airtel'][1:]:  # Skip operator dropdown itself
             widget.grid_remove()
-
-        # === Back Button ===
-        self.back_button = ttk.Button(
-            self.root, 
-            text="← Back to Operator Selection", 
-            command=self.reset_operator_selection, 
-            width=30
-        )
-        # Initially hidden, will be shown when operator is selected
+        
+        # Also hide JIO second frame widgets initially
+        for widget in self.jio_second_frame_widgets:
+            widget.grid_remove()
+        
+        # Hide JIO second frame initially
+        if hasattr(self, 'jio_second_frame') and self.jio_second_frame:
+            self.jio_second_frame.pack_forget()
 
         # === Button Frame for Run and Clear buttons ===
-        button_frame = tk.Frame(self.root, bg="#e9edf0")
-        button_frame.pack(pady=10)
+        self.button_frame = tk.Frame(self.root, bg="#e9edf0")
+        # Initially hidden (will be packed in update_operator_fields)
+        self.button_frame.pack_forget() 
 
+        # === JIO-specific Back Button ===
+        self.jio_back_button = ttk.Button(self.button_frame, text="← Back", command=self.jio_back_to_first_frame, width=15)
+        self.jio_back_button.pack_forget() # Initially hidden
+
+        # === JIO-specific Clear Button (for current frame) ===
+        self.jio_clear_button = ttk.Button(self.button_frame, text="Clean", command=self.jio_clear_current_frame, width=15)
+        self.jio_clear_button.pack_forget() # Initially hidden
+        
         # === Run Button ===
-        self.run_button = ttk.Button(button_frame, text="▶ Run Validation", command=self.run_validation, width=20)
+        self.run_button = ttk.Button(self.button_frame, text="▶ Run Validation", command=self.run_validation, width=20)
         self.run_button.pack(side="left", padx=5)
 
-        # === Clear Button ===
-        clear_button = ttk.Button(button_frame, text="🗑️ Clear All", command=self.clear_all_fields, width=20)
-        clear_button.pack(side="left", padx=5)
+        # === Clear All Button (for Airtel) ===
+        self.clear_all_button = ttk.Button(self.button_frame, text="🗑️ Clean All", command=self.clear_all_fields, width=20)
+        self.clear_all_button.pack(side="left", padx=5)
+        
+        # === JIO-specific Next Button (to show second frame) ===
+        self.jio_next_button = ttk.Button(self.button_frame, text="Next →", command=self.jio_show_second_frame, width=15)
+        self.jio_next_button.pack_forget() # Initially hidden
+        
+        # === Progress Bar ===
+        self.progress_bar = ttk.Progressbar(self.button_frame, orient="horizontal", length=300, mode="indeterminate")
+        self.progress_bar.pack(side="left", padx=10, fill="x", expand=True)
+        self.progress_bar.pack_forget()  # Initially hidden
         
         # === Log Output Frame ===
-        log_frame = tk.LabelFrame(self.root, text="Validation Log", bg="#f8f9fa", font=("Segoe UI", 10))
-        log_frame.pack(padx=20, pady=(0, 15), fill="both", expand=True)
+        self.log_frame = tk.LabelFrame(self.root, text="Validation Log", bg="#f8f9fa", font=("Segoe UI", 10))
+        # Show initially
+        self.log_frame.pack(padx=20, pady=(0, 15), fill="both", expand=True)
 
         self.log_output = scrolledtext.ScrolledText(
-            log_frame,
+            self.log_frame,
             font=("Consolas", 10),
             wrap="word",
             height=10
@@ -1122,6 +1653,10 @@ class FirstCardTab:
         self._validation_in_progress = False
         self.run_button.config(text="▶ Run Validation", state="normal")
         
+        # Stop and hide progress bar
+        self.progress_bar.stop()
+        self.progress_bar.pack_forget()
+        
         if not report_path:
             self.log_output.insert(tk.END, "[FAIL] Validation failed to generate report!\n")
             if validation_errors:
@@ -1133,8 +1668,9 @@ class FirstCardTab:
 
         # Check if the report file exists and is accessible
         if report_path and os.path.exists(report_path):
+            operator = self.operator_cb.get()
             self.log_output.insert(tk.END, "=" * 50 + "\n")
-            self.log_output.insert(tk.END, f"[PASS] JIO Validation completed successfully.\n")
+            self.log_output.insert(tk.END, f"[PASS] {operator} Validation completed successfully.\n")
             self.log_output.insert(tk.END, f"📄 Report saved at: {report_path}\n")
             self.log_output.insert(tk.END, "=" * 50 + "\n\n")
             
@@ -1162,6 +1698,10 @@ class FirstCardTab:
         """Callback when validation thread encounters an unhandled exception"""
         self._validation_in_progress = False
         self.run_button.config(text="▶ Run Validation", state="normal")
+        
+        # Stop and hide progress bar
+        self.progress_bar.stop()
+        self.progress_bar.pack_forget()
         
         full_error = "\n" + "=" * 50 + "\n"
         full_error += f"[FAIL] CRITICAL ERROR DURING VALIDATION:\n{error_msg}\n"
