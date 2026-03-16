@@ -262,7 +262,7 @@ class MNOFileTab:
         left_content.pack(fill=tk.BOTH, expand=True)
         
         # Folder selection
-        folder_frame = ttk.LabelFrame(left_content, text="Project Configuration", padding=15)
+        folder_frame = ttk.LabelFrame(left_content, text="Processing Setup", padding=15)
         folder_frame.pack(fill=tk.X, pady=(0, 15))
         
         # INPUT Folder

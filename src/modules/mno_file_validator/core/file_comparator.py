@@ -13,6 +13,31 @@ modules_path = os.path.join(project_root, 'modules')
 if modules_path not in sys.path:
     sys.path.insert(0, modules_path)
 
+
+def _make_long_path(path) -> str:
+    """Convert path to extended-length path on Windows for long paths (>240 chars)"""
+    if sys.platform != 'win32':
+        return str(path)
+    
+    path_str = str(path)
+    if path_str.startswith('\\\\?\\'):
+        return path_str
+    
+    abs_path = os.path.abspath(path_str)
+    if len(abs_path) > 240:
+        if len(abs_path) >= 2 and abs_path[1] == ':':
+            return '\\\\?\\' + abs_path
+        elif abs_path.startswith('\\\\'):
+            return '\\\\?\\UNC\\' + abs_path[2:]
+    return path_str
+
+
+def _safe_open(path, mode='r', encoding='utf-8', errors='replace'):
+    """Open file with long path support on Windows"""
+    long_path = _make_long_path(path)
+    return open(long_path, mode, encoding=encoding, errors=errors)
+
+
 # Now use absolute imports
 # Change from:
 from mno_file_validator.core.simoda_validator import SIMODAValidator
@@ -28,7 +53,7 @@ from .scm_validator import SCMValidator
 from ..utils.excel_report_generator import ExcelReportGenerator
 from ..utils.file_utils import (
     parse_filename, find_matching_files, find_matching_files_new, find_output_files,
-    extract_header_info, validate_quantity
+    extract_header_info, validate_quantity, safe_path_exists
 )
 
 class MNOFileComparator(BaseValidator):
@@ -135,11 +160,6 @@ class MNOFileComparator(BaseValidator):
                         
             # Find output files
             output_files = find_output_files(match['out_folder'], match['suffix'])
-            
-            # Debug: print what we found
-            print(f"DEBUG: Looking for files with suffix: {match['suffix']}")
-            print(f"DEBUG: Out folder: {match['out_folder']}")
-            print(f"DEBUG: Files found: {output_files}")
             
             # Check for missing files
             missing_files = [
@@ -294,7 +314,8 @@ class MNOFileComparator(BaseValidator):
         from .validation_base import ValidationResult
         import os
 
-        if not orig_trig_file or not orig_trig_file.exists():
+        # Use safe_path_exists for long path support
+        if not orig_trig_file or not safe_path_exists(str(orig_trig_file)):
             return ValidationResult(False, "ORIG_TRIG file not found", [])
 
         # Get IN filename
@@ -314,7 +335,7 @@ class MNOFileComparator(BaseValidator):
 
         # Read ORIG_TRIG
         try:
-            with open(orig_trig_file, "r", encoding="utf-8") as f:
+            with _safe_open(orig_trig_file, "r", "utf-8") as f:
                 content = f.read()
         except Exception as e:
             return ValidationResult(False, f"Error reading ORIG_TRIG file: {str(e)}", [])
@@ -362,7 +383,7 @@ class MNOFileComparator(BaseValidator):
     def extract_cnum_iccids_imsis(self, cnum_file, sim_quantity):
         """Extract ICCIDs and IMSIs from CNUM file"""
         try:
-            with open(cnum_file, 'r', encoding='utf-8') as f:
+            with _safe_open(cnum_file, 'r', 'utf-8') as f:
                 lines = f.readlines()
             
             data_lines = lines[15:15+sim_quantity]

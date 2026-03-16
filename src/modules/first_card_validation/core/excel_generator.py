@@ -235,7 +235,7 @@ def save_report(wb, ml_path, pcom_path, iccid=None):
                     swapped_number += raw_number[i]  # last digit if odd length
 
             # Create final report name
-            report_name = f"{swapped_number}_Validation_Report.xlsx"
+            report_name = f"{swapped_number}_validation_report.xlsx"
 
         # Save in PCOM folder if available, else Desktop
         if pcom_path and os.path.exists(os.path.dirname(pcom_path)):

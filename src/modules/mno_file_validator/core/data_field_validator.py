@@ -18,6 +18,31 @@ if modules_path not in sys.path:
 from .validation_base import BaseValidator, ValidationResult
 from ..utils.file_utils import luhn_check
 
+
+def _make_long_path(path) -> str:
+    """Convert path to extended-length path on Windows for long paths (>240 chars)"""
+    if sys.platform != 'win32':
+        return str(path)
+    
+    path_str = str(path)
+    if path_str.startswith('\\\\?\\'):
+        return path_str
+    
+    abs_path = os.path.abspath(path_str)
+    if len(abs_path) > 240:
+        if len(abs_path) >= 2 and abs_path[1] == ':':
+            return '\\\\?\\' + abs_path
+        elif abs_path.startswith('\\\\'):
+            return '\\\\?\\UNC\\' + abs_path[2:]
+    return path_str
+
+
+def _safe_open(path, mode='r', encoding='utf-8', errors='replace'):
+    """Open file with long path support on Windows"""
+    long_path = _make_long_path(path)
+    return open(long_path, mode, encoding=encoding, errors=errors)
+
+
 class DataFieldValidator(BaseValidator):
     """Handles data field validation between IN and CNUM files"""
     
@@ -25,10 +50,10 @@ class DataFieldValidator(BaseValidator):
                            sim_quantity: int) -> ValidationResult:
         """Validate ALL data fields match exactly between IN and CNUM files"""
         try:
-            with open(in_file, 'r', encoding='utf-8') as f:
+            with _safe_open(in_file, 'r', 'utf-8') as f:
                 in_lines = f.readlines()
             
-            with open(cnum_file, 'r', encoding='utf-8') as f:
+            with _safe_open(cnum_file, 'r', 'utf-8') as f:
                 cnum_lines = f.readlines()
             
             if len(in_lines) < 15 + sim_quantity:

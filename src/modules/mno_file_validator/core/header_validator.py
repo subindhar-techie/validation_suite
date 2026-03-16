@@ -16,19 +16,44 @@ if modules_path not in sys.path:
 
 from .validation_base import BaseValidator, ValidationResult
 
+
+def _make_long_path(path) -> str:
+    """Convert path to extended-length path on Windows for long paths (>240 chars)"""
+    if sys.platform != 'win32':
+        return str(path)
+    
+    path_str = str(path)
+    if path_str.startswith('\\\\?\\'):
+        return path_str
+    
+    abs_path = os.path.abspath(path_str)
+    if len(abs_path) > 240:
+        if len(abs_path) >= 2 and abs_path[1] == ':':
+            return '\\\\?\\' + abs_path
+        elif abs_path.startswith('\\\\'):
+            return '\\\\?\\UNC\\' + abs_path[2:]
+    return path_str
+
+
+def _safe_open(path, mode='r', encoding='utf-8', errors='replace'):
+    """Open file with long path support on Windows"""
+    long_path = _make_long_path(path)
+    return open(long_path, mode, encoding=encoding, errors=errors)
+
+
 class HeaderValidator(BaseValidator):
     """Handles header validation between IN and CNUM files"""
     
     def validate_headers(self, in_file: Path, cnum_file: Path) -> ValidationResult:
         """Validate first 15 lines match exactly between IN and CNUM files"""
         try:
-            with open(in_file, 'r', encoding='utf-8') as f_in:
+            with _safe_open(in_file, 'r', 'utf-8') as f_in:
                 in_lines = [
                     line.rstrip('\n\r') 
                     for line in f_in.readlines()[:15]
                 ]
             
-            with open(cnum_file, 'r', encoding='utf-8') as f_cnum:
+            with _safe_open(cnum_file, 'r', 'utf-8') as f_cnum:
                 cnum_lines = [
                     line.rstrip('\n\r') 
                     for line in f_cnum.readlines()[:15]

@@ -2,10 +2,37 @@
 MNO File Validator - SIMODA file validation logic
 """
 import re
+import os
+import sys
 from typing import List, Tuple, Optional, Callable
 from pathlib import Path
 from datetime import datetime
 from .validation_base import BaseValidator, ValidationResult
+
+
+def _make_long_path(path) -> str:
+    """Convert path to extended-length path on Windows for long paths (>240 chars)"""
+    if sys.platform != 'win32':
+        return str(path)
+    
+    path_str = str(path)
+    if path_str.startswith('\\\\?\\'):
+        return path_str
+    
+    abs_path = os.path.abspath(path_str)
+    if len(abs_path) > 240:
+        if len(abs_path) >= 2 and abs_path[1] == ':':
+            return '\\\\?\\' + abs_path
+        elif abs_path.startswith('\\\\'):
+            return '\\\\?\\UNC\\' + abs_path[2:]
+    return path_str
+
+
+def _safe_open(path, mode='r', encoding='utf-8', errors='replace'):
+    """Open file with long path support on Windows"""
+    long_path = _make_long_path(path)
+    return open(long_path, mode, encoding=encoding, errors=errors)
+
 
 class SIMODAValidator(BaseValidator):
     """Handles SIMODA file validation"""
@@ -42,7 +69,7 @@ class SIMODAValidator(BaseValidator):
             
             for encoding in encodings:
                 try:
-                    with open(simoda_file, 'r', encoding=encoding) as f:
+                    with _safe_open(simoda_file, 'r', encoding) as f:
                         lines = f.readlines()
                         content = ''.join(lines)
                     break

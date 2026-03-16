@@ -44,11 +44,14 @@ class ExcelReportGenerator:
                 po_number = po_num
                 break
         
+        # Generate date string for filename
+        date_str = datetime.now().strftime('%Y%m%d')
+        
         if po_number:
-            excel_filename = f"PO_INPUT_FILE_{po_number}.xlsx"
+            excel_filename = f"Bulk_Validation_{po_number}_{date_str}.xlsx"
         else:
             parent_name = Path(parent_folder).name  # Fallback to folder name
-            excel_filename = f"{parent_name}.xlsx"
+            excel_filename = f"Bulk_Validation_{parent_name}_{date_str}.xlsx"
         
         excel_path = Path(parent_folder) / excel_filename
         

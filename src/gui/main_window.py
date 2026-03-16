@@ -330,7 +330,7 @@ class MainWindow:
             # Create window but keep it withdrawn until fully configured
             new_window = tk.Toplevel(self.root)
             new_window.withdraw()  # Keep hidden until fully ready
-            new_window.title("Input/Output Files Validation")
+            new_window.title("Input/Output Files Validation Version 1.2")
             new_window.resizable(False, False)
             new_window.configure(bg=Theme.BG_MAIN)
             

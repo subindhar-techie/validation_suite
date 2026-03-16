@@ -19,6 +19,30 @@ if modules_path not in sys.path:
 from .validation_base import BaseValidator, ValidationResult
 
 
+def _make_long_path(path) -> str:
+    """Convert path to extended-length path on Windows for long paths (>240 chars)"""
+    if sys.platform != 'win32':
+        return str(path)
+    
+    path_str = str(path)
+    if path_str.startswith('\\\\?\\'):
+        return path_str
+    
+    abs_path = os.path.abspath(path_str)
+    if len(abs_path) > 240:
+        if len(abs_path) >= 2 and abs_path[1] == ':':
+            return '\\\\?\\' + abs_path
+        elif abs_path.startswith('\\\\'):
+            return '\\\\?\\UNC\\' + abs_path[2:]
+    return path_str
+
+
+def _safe_open(path, mode='r', encoding='utf-8', errors='replace'):
+    """Open file with long path support on Windows"""
+    long_path = _make_long_path(path)
+    return open(long_path, mode, encoding=encoding, errors=errors)
+
+
 class ErrorGrouper:
     """Groups similar errors together for cleaner reporting"""
     
@@ -143,7 +167,7 @@ class SCMValidator(BaseValidator):
                             cnum_iccids: List[str], cnum_imsis: List[str]) -> ValidationResult:
         """Validate SCM file structure with proper MSN and MSC format"""
         try:
-            with open(scm_file, 'r', encoding='utf-8') as f:
+            with _safe_open(scm_file, 'r', 'utf-8') as f:
                 lines = f.readlines()
             
             data_lines = lines[1:1+sim_quantity]

@@ -225,13 +225,16 @@ class MachineLogTab:
             # Save report to machine log directory
             machine_log_dir = os.path.dirname(machine_log_path)
             iccid_swapped = validator.field_values.get("ICCID_CARD_SWAPPED")
+            
+            # Generate date string for filename
+            date_str = datetime.now().strftime('%Y%m%d')
 
             if iccid_swapped:
-                report_filename = f"{iccid_swapped}_1st_card_machine_log_Validation.txt"
+                report_filename = f"LogValidation_{iccid_swapped}_{date_str}.txt"
             else:
                 log_filename = os.path.basename(machine_log_path)
                 log_name = os.path.splitext(log_filename)[0]
-                report_filename = f"{log_name}_1st_card_machine_log_Validation.txt"
+                report_filename = f"LogValidation_{log_name}_{date_str}.txt"
 
             report_path = os.path.join(machine_log_dir, report_filename)
             print(f"Report Will Be Saved To: {report_path}")        
@@ -304,7 +307,7 @@ class MachineLogTab:
             print(f"Icon loading failed: {e}. Using default icon.")
             # Don't crash the application if icon fails
 
-        self.root.title("1st Card Machine Log Validation")
+        self.root.title("Machine Log Validation Version 1.2")
         
         # DO NOT reset geometry - it's already centered from main_window
         # But ensure the size is correct
@@ -346,7 +349,7 @@ class MachineLogTab:
         
         title_label = tk.Label(
             header_content,
-            text="📊 1st Card Machine Log validation",
+            text="📊 Machine Log validation",
             font=('Arial', 16, 'bold'),
             bg='#2c3e50',
             fg='#ecf0f1'

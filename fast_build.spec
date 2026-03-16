@@ -35,7 +35,7 @@ for dll in ['libffi-7.dll', 'libffi-8.dll']:
         dll_files.append((dll_path, '.'))
 
 # Check for pythonw (no console) DLL
-for dll in ['pythonw312.dll']:
+for dll in ['pythonw312.dll']:                  
     dll_path = os.path.join(python_path, dll)
     if os.path.exists(dll_path):
         dll_files.append((dll_path, '.'))

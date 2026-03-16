@@ -184,42 +184,53 @@ MNO (Mobile Network Operator) validation compares **batch totals** between what 
 
 | Input | Description |
 |-------|-------------|
-| INPUT Folder | Folder containing .txt files (SIMODA files) |
-| OUTPUT Folder | Folder containing subfolders with SCM files |
+| INPUT Folder | Folder containing IN_*.txt files from the operator |
+| OUTPUT Folder | Folder containing OUT_* subfolders with CNUM, SCM, SIMODA, and ORIG_TRIG files |
 
 ### Folder Structure Expected
 
 ```
 INPUT Folder (selected by user):
-├── SIMODA_001.txt
-├── SIMODA_002.txt
-└── ...
+├── IN_944502478_00001_17911_GLMU_3795231_M_WODA_RAW_08092025173041.txt
+└── ... (other IN_*.txt files)
 
 OUTPUT Folder (selected by user):
-├── Batch_001/
-│   └── SCM.txt
-├── Batch_002/
-│   └── SCM.txt
-└── ...
+├── OUT_944502478_00001_17911_GLMU_3795231_M_WODA_RAW_08092025173041/
+│   ├── CNUM_944502478_00001_17911_GLMU_3795231_M_WODA_RAW_08092025173041.txt
+│   ├── ORIG_TRIG_944502478_00001_17911_GLMU_3795231_M_WODA_RAW_08092025173041.txt
+│   ├── SCM_944502478_00001_17911_GLMU_3795231_M_WODA_RAW_08092025173041.txt
+│   └── SIMODA_944502478_00001_17911_GLMU_3795231_M_WODA_RAW_08092025173041.cps
+└── ... (other OUT_* folders)
 ```
+
+### File Naming Convention
+
+| File Type | Prefix | Extension | Description |
+|-----------|--------|-----------|-------------|
+| Input File | `IN_` | `.txt` | Original operator file |
+| Output Folder | `OUT_` | - | Contains processed files |
+| CNUM File | `CNUM_` | `.txt` | Customer number records |
+| ORIG_TRIG File | `ORIG_TRIG_` | `.txt` | Original trigger/reference file |
+| SCM File | `SCM_` | `.txt` | Supply chain management file |
+| SIMODA File | `SIMODA_` | `.cps` | SIM ODA (Operator Data Agreement) file |
 
 ### How It Works (Step by Step)
 
 **Step 1: Select INPUT Folder**
-- Browse and select folder containing SIMODA files
-- These are .txt files from the network operator
+- Browse and select folder containing IN_*.txt files
+- These are input files from the network operator
 
 **Step 2: Select OUTPUT Folder**
-- Browse and select folder containing SCM subfolders
-- Each subfolder has an SCM.txt file
+- Browse and select folder containing OUT_* subfolders
+- Each subfolder contains: CNUM, ORIG_TRIG, SCM, and SIMODA files
 
 **Step 3: Run Validation**
 - Click "Validate" button
 
 **Step 4: Processing**
-1. System reads all SIMODA files from INPUT folder
-2. For each batch in OUTPUT folder:
-   - Reads SCM file
+1. System reads all IN_*.txt files from INPUT folder
+2. For each matching OUT_* folder in OUTPUT folder:
+   - Reads CNUM, SCM, SIMODA, and ORIG_TRIG files
    - Compares quantities
    - Validates all ICCIDs match
    - Checks data fields (dates, codes)

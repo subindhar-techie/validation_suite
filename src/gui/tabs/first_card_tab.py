@@ -1314,7 +1314,7 @@ class FirstCardTab:
             self.create_header_without_icon()
 
         # Only set title, DO NOT reset geometry - it's already centered from main_window
-        self.root.title("Validator Tool Version 1.1")
+        self.root.title("First Card Validator Tool Version 1.2")
         self.root.configure(bg="#e9edf0")
         self.root.resizable(False, True)  # Allow vertical resizing for JIO two-step flow
 
