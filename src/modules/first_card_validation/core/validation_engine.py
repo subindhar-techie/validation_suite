@@ -1817,8 +1817,12 @@ def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=No
     if not iccid:
         iccid = results.get("ICCID_CARD (2FE2)", "Unknown_ICCID")
     
+    # Extract SOF number from folder path for report naming
+    folder_path = os.path.dirname(filepath) if filepath else ""
+    sof_number = extract_sof_number(folder_path)
+    
     # After saving report
-    report_path = save_report(wb, filepath, pcom_path, iccid)
+    report_path = save_report(wb, filepath, pcom_path, iccid, sof_number)
     print(f"\n" + "="*80)
     print(f"REPORT GENERATION COMPLETE")
     print(f"Report saved at: {report_path}")

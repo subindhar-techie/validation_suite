@@ -17,6 +17,25 @@ except ImportError:
     IMAGE_SUPPORT = False
     print("⚠️  Openpyxl image support not available. Images will not be inserted.")
 
+# ========== HELPER FUNCTIONS ==========
+def extract_sof_number(folder_path):
+    """
+    Extract SOF Number from folder name.
+    If folder name contains RTLP prefix, use the complete RTLP code (e.g., RTLP10090).
+    Folder names follow format like "RTLP10086 NBIOT RJ 50K" or "RTLP10090 - WBIoT BR 250K"
+    """
+    if not folder_path or not os.path.exists(folder_path):
+        return ""
+    
+    folder_name = os.path.basename(folder_path)
+    
+    # Check for RTLP prefix
+    rtlp_match = re.search(r'(RTLP\d+)', folder_name, re.IGNORECASE)
+    if rtlp_match:
+        return rtlp_match.group(1)
+    
+    return ""
+
 # ========== EXCEL STYLING & HEADER FUNCTIONS ==========
 def setup_excel_styles():
     """Setup Excel styles - UPDATED with exact colors from template"""
@@ -202,7 +221,7 @@ def add_image_section_to_report(ws, styles, image_paths, start_row):
         return start_row
 
 # ========== SAVE REPORT FUNCTION ==========
-def save_report(wb, ml_path, pcom_path, iccid=None):
+def save_report(wb, ml_path, pcom_path, iccid=None, sof_number=None):
     """
     Save workbook with AIRTEL naming convention using ICCID
     """
@@ -211,7 +230,11 @@ def save_report(wb, ml_path, pcom_path, iccid=None):
         if iccid:
             # Clean ICCID for filename
             clean_iccid = str(iccid).replace("ICCID_", "").strip()
-            report_name = f"{clean_iccid}_validation_report.xlsx"
+            # Include SOF number if available
+            if sof_number:
+                report_name = f"{clean_iccid}_{sof_number}_validation_report.xlsx"
+            else:
+                report_name = f"{clean_iccid}_validation_report.xlsx"
         else:
             # Fallback: Extract base filename
             base_name = os.path.splitext(os.path.basename(ml_path))[0]
@@ -231,7 +254,11 @@ def save_report(wb, ml_path, pcom_path, iccid=None):
                     swapped_number += raw_number[i]
             
             # Create final report name
-            report_name = f"{swapped_number}_validation_report.xlsx"
+            # Include SOF number if available
+            if sof_number:
+                report_name = f"{swapped_number}_{sof_number}_validation_report.xlsx"
+            else:
+                report_name = f"{swapped_number}_validation_report.xlsx"
         
         # Save in PCOM folder if available, else Desktop
         if pcom_path and os.path.exists(os.path.dirname(pcom_path)):
@@ -1598,7 +1625,11 @@ def main_airtel(filepath, pcom_path=None, cnum_path=None, sim_oda_path=None, ima
             # Try parsing ICCID from cps if machine log fails
             iccid = cps_fields.get("ICCID")
         
-        report_path = save_report(wb, filepath, pcom_path, iccid)
+        # Extract SOF number from folder path for report naming
+        folder_path = os.path.dirname(filepath) if filepath else ""
+        sof_number = extract_sof_number(folder_path)
+        
+        report_path = save_report(wb, filepath, pcom_path, iccid, sof_number)
         print(f"\n✅ Validation report saved: {report_path}")
         
         # Summary - Include image information

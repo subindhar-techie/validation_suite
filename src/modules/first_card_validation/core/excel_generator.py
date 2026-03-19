@@ -209,13 +209,17 @@ def insert_image(ws, image_path, cell_location):
 
 
 
-def save_report(wb, ml_path, pcom_path, iccid=None):
+def save_report(wb, ml_path, pcom_path, iccid=None, sof_number=None):
     try:
         # Create final report name using ICCID if available
         if iccid:
             # Clean ICCID for filename (remove any prefixes)
             clean_iccid = str(iccid).replace("ICCID_", "").strip()
-            report_name = f"{clean_iccid}_validation_report.xlsx"
+            # Include SOF number if available
+            if sof_number:
+                report_name = f"{clean_iccid}_{sof_number}_validation_report.xlsx"
+            else:
+                report_name = f"{clean_iccid}_validation_report.xlsx"
         else:
             # Fallback: Extract base filename (e.g., "Log_98195808050716183064")
             base_name = os.path.splitext(os.path.basename(ml_path))[0]
@@ -235,7 +239,11 @@ def save_report(wb, ml_path, pcom_path, iccid=None):
                     swapped_number += raw_number[i]  # last digit if odd length
 
             # Create final report name
-            report_name = f"{swapped_number}_validation_report.xlsx"
+            # Include SOF number if available
+            if sof_number:
+                report_name = f"{swapped_number}_{sof_number}_validation_report.xlsx"
+            else:
+                report_name = f"{swapped_number}_validation_report.xlsx"
 
         # Save in PCOM folder if available, else Desktop
         if pcom_path and os.path.exists(os.path.dirname(pcom_path)):
