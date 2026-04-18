@@ -197,6 +197,11 @@ class FirstCardTab:
                     entry_widget.delete(0, tk.END)
                     print(f"✅ Cleared Airtel image entry {i}")
             
+            # NEW: Clear AIRTEL Perso Script entry if it exists
+            if hasattr(self, 'airtel_perso_script_entry'):
+                self.airtel_perso_script_entry.delete(0, tk.END)
+                print("✅ Cleared Airtel Perso Script entry")
+            
             # Reset title
             self.jio_first_frame.config(text="")
             
@@ -903,6 +908,27 @@ class FirstCardTab:
                     self._validation_in_progress = False
                     return
                 
+                # Check file name prefixes for CNUM, SCM, SIM ODA
+                invalid_prefixes = []
+                cnum_filename = os.path.basename(paths[2]).upper()
+                scm_filename = os.path.basename(paths[3]).upper()
+                simoda_filename = os.path.basename(paths[4]).upper()
+                
+                if not cnum_filename.startswith("CNUM"):
+                    invalid_prefixes.append(f"CNUM file must start with 'CNUM' (Selected: {os.path.basename(paths[2])})")
+                if not scm_filename.startswith("SCM"):
+                    invalid_prefixes.append(f"SCM file must start with 'SCM' (Selected: {os.path.basename(paths[3])})")
+                if not simoda_filename.startswith("SIMODA"):
+                    invalid_prefixes.append(f"SIM ODA file must start with 'SIMODA' (Selected: {os.path.basename(paths[4])})")
+                    
+                if invalid_prefixes:
+                    error_message = "Invalid file type selected:\n\n"
+                    for err in invalid_prefixes:
+                        error_message += f"• {err}\n"
+                    messagebox.showerror("File Name Validation Error", error_message)
+                    self._validation_in_progress = False
+                    return
+                
                 # Verify profile matches PCOM file content
                 if paths[1]:
                     self.log_output.delete(1.0, tk.END)
@@ -1058,12 +1084,16 @@ class FirstCardTab:
                     try:
                         from first_card_validation.core.airtel_validation import main_airtel as run_airtel_validation
                         
+                        # Get Airtel Perso Script path
+                        perso_script_path = self.airtel_perso_script_entry.get().strip() if hasattr(self, 'airtel_perso_script_entry') and self.airtel_perso_script_entry else ""
+                        
                         report_path, validation_errors = run_airtel_validation(
                             filepath=ml_path,
                             pcom_path=pcom_path,
                             cnum_path=cnum_path,
                             sim_oda_path=sim_oda_path,
-                            image_paths=airtel_image_paths
+                            image_paths=airtel_image_paths,
+                            perso_script_path=perso_script_path
                         )
 
                         # Callback to UI
@@ -1475,8 +1505,9 @@ class FirstCardTab:
             # Add to second frame widgets
             self.jio_second_frame_widgets.extend([lbl, ent, btn])
 
-        # AIRTEL file inputs - FIRST FRAME (ML, PCOM ONLY)
+        # AIRTEL file inputs - FIRST FRAME (Perso Script, ML, PCOM)
         airtel_first_frame_inputs = [
+            ("Perso Script (.txt)", lambda e: self.browse_perso_script_file(e)),
             ("Machine Log (.txt)", self.browse_ml_file),
             ("PCOM (.L00, .L07)", self.browse_pcom_file)
         ]
@@ -1557,17 +1588,18 @@ class FirstCardTab:
             print("[PASS] JIO entries assigned successfully")
 
         # AIRTEL entries - SPECIFIC ENTRIES FOR AIRTEL
-        if len(airtel_entries) >= 6:
+        if len(airtel_entries) >= 7:
             # Creation order:
-            # 0: Machine Log, 1: PCOM
-            # 2: INNER LABEL, 3: OUTER LABEL
-            # 4: CNUM, 5: SIM ODA
-            self.airtel_ml_entry = airtel_entries[0]
-            self.airtel_pcom_entry = airtel_entries[1]
-            self.airtel_image1_entry = airtel_entries[2]
-            self.airtel_image2_entry = airtel_entries[3]
-            self.airtel_cnum_entry = airtel_entries[4]
-            self.airtel_sim_oda_entry = airtel_entries[5]
+            # 0: Perso Script, 1: Machine Log, 2: PCOM
+            # 3: INNER LABEL, 4: OUTER LABEL
+            # 5: CNUM, 6: SIM ODA
+            self.airtel_perso_script_entry = airtel_entries[0]
+            self.airtel_ml_entry = airtel_entries[1]
+            self.airtel_pcom_entry = airtel_entries[2]
+            self.airtel_image1_entry = airtel_entries[3]
+            self.airtel_image2_entry = airtel_entries[4]
+            self.airtel_cnum_entry = airtel_entries[5]
+            self.airtel_sim_oda_entry = airtel_entries[6]
             
             print("[PASS] Airtel entries assigned successfully")
         else:

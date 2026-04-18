@@ -53,7 +53,7 @@ class SIMODAValidator(BaseValidator):
             "SAMSUNG 340": 'Chip("S3FW9FG")',
             "SAMSUNG 480": 'Chip("S3FW9FV")', 
             "TRANSA 380": 'Chip("TSS380A1")',
-            "SLM17ECB800B" : 'Chip("SL17800")'
+            "SLM17800" : 'Chip("SLM17ECB800B")'
         }
         
         expected_code = chip_codes.get(self.chip_type)

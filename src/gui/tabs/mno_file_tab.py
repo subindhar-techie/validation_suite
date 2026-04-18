@@ -297,7 +297,7 @@ class MNOFileTab:
         
         self.chip_type = ttk.Combobox(
             folder_frame, 
-            values=["SAMSUNG 340", "SAMSUNG 480", "TRANSA 380" , "SLM17ECB800B"],
+            values=["SAMSUNG 340", "SAMSUNG 480", "TRANSA 380" , "SLM17800"],
             state="readonly",
             font=('Arial', 9)
         )

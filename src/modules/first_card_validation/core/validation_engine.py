@@ -1821,6 +1821,24 @@ def main(profile_type, filepath, pcom_path, scm_path, sim_oda_path, cnum_path=No
     folder_path = os.path.dirname(filepath) if filepath else ""
     sof_number = extract_sof_number(folder_path)
     
+    # Extract PO number for report naming (from multiple sources)
+    po_number = None
+    
+    # Try from validated_cache
+    if not po_number:
+        po_number = validated_cache.get("PO")
+    
+    # Try from file_values
+    if not po_number:
+        for key, files in file_values.items():
+            if "PO" in key.upper():
+                for src, val in files.items():
+                    if val and val not in ["N/A", "NR", "Missing"]:
+                        po_number = str(val).strip()
+                        break
+                if po_number:
+                    break
+    
     # After saving report
     report_path = save_report(wb, filepath, pcom_path, iccid, sof_number)
     print(f"\n" + "="*80)

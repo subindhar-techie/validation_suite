@@ -36,19 +36,103 @@ def extract_sof_number(folder_path):
     
     return ""
 
+
+def extract_profile_from_cnum(cnum_path):
+    """
+    Extract Profile Type from .cnum file.
+    Example: Profile: Prepaid → Prepaid
+    """
+    if not cnum_path or not os.path.exists(cnum_path):
+        return ""
+    
+    try:
+        with open(cnum_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        
+        # Look for Profile: Prepaid or Profile: Postpaid
+        profile_match = re.search(r'Profile:\s*(Prepaid|Postpaid)', content, re.IGNORECASE)
+        if profile_match:
+            return profile_match.group(1).strip()
+        
+        return ""
+    except Exception as e:
+        print(f"⚠️  Error extracting profile from cnum: {e}")
+        return ""
+
+
+def extract_circle_from_cps(cps_path):
+    """
+    Extract Circle from .cps file.
+    Example: CardProfile("BHA_DL_DSA_PA4_R16_Sense_5GNSA_340K_07_TEST") → Circle = DL
+    (second segment after splitting by _)
+    """
+    if not cps_path or not os.path.exists(cps_path):
+        return ""
+    
+    try:
+        with open(cps_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        
+        # Look for CardProfile pattern
+        card_profile_match = re.search(r'CardProfile\s*\(\s*["\']([^"\']+)["\']\s*\)', content)
+        if card_profile_match:
+            profile_name = card_profile_match.group(1)
+            parts = profile_name.split('_')
+            if len(parts) >= 2:
+                # Second segment is the Circle
+                return parts[1]
+        
+        return ""
+    except Exception as e:
+        print(f"⚠️  Error extracting circle from cps: {e}")
+        return ""
+
+
+def extract_batch_info_from_cnum(cnum_path):
+    """
+    Extract Batch No and Batch QTY from .cnum file.
+    Example: Quantity: 7, Batch: 12345 → Batch No = 12345, Batch QTY = 7
+    """
+    batch_no = ""
+    batch_qty = ""
+    
+    if not cnum_path or not os.path.exists(cnum_path):
+        return batch_no, batch_qty
+    
+    try:
+        with open(cnum_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        
+        # Look for Quantity: X pattern
+        qty_match = re.search(r'Quantity:\s*(\d+)', content, re.IGNORECASE)
+        if qty_match:
+            batch_qty = qty_match.group(1)
+            print(f"✅ Batch QTY extracted: {batch_qty}")
+        
+        # Look for Batch: X pattern
+        batch_match = re.search(r'Batch:\s*(\d+)', content, re.IGNORECASE)
+        if batch_match:
+            batch_no = batch_match.group(1)
+            print(f"✅ Batch No extracted: {batch_no}")
+        
+        return batch_no, batch_qty
+    except Exception as e:
+        print(f"⚠️  Error extracting batch info from cnum: {e}")
+        return "", ""
+
 # ========== EXCEL STYLING & HEADER FUNCTIONS ==========
 def setup_excel_styles():
     """Setup Excel styles - UPDATED with exact colors from template"""
     return {
-        'dark_blue_fill': PatternFill(start_color='BDDDE9', end_color='BDDDE9', fill_type='solid'),
-        'header_font': Font(color='000000', bold=True, size=12),
+        'dark_blue_fill': PatternFill(start_color='2A8F9E', end_color='2A8F9E', fill_type='solid'),
+        'header_font': Font(color='FFFFFF', bold=True, size=12),
         'thick_border': Border(
             left=Side(style='thick'),
             right=Side(style='thick'),
             top=Side(style='thick'),
             bottom=Side(style='thick')
         ),
-        'green_fill': PatternFill(start_color='BDDDE9', end_color='BDDDE9', fill_type='solid'),  # #BDDDE9
+        'green_fill': PatternFill(start_color='00B050', end_color='00B050', fill_type='solid'),  # Green for Pass
         'red_fill': PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid'),    # #FF0000
         'yellow_fill': PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid'), # #FFFF00
         'gray_fill': PatternFill(start_color='F2F2F2', end_color='F2F2F2', fill_type='solid'),
@@ -61,7 +145,7 @@ def setup_excel_headers(ws, styles, machine_log_path, pcom_path, cnum_path, cps_
     # Title Section
     ws["A1"] = "First Card Validation Report"
     ws["A1"].fill = styles['dark_blue_fill']
-    ws["A1"].font = Font(bold=True, color='000000', size=14)
+    ws["A1"].font = Font(bold=True, color='FFFFFF', size=14)
     ws["A1"].alignment = Alignment(horizontal='left', vertical='center')
     ws.merge_cells("A1:B1")
     
@@ -69,7 +153,7 @@ def setup_excel_headers(ws, styles, machine_log_path, pcom_path, cnum_path, cps_
     timestamp = datetime.today().strftime('%A, %d %B %Y %I:%M %p')
     ws["D1"] = f"Date : {timestamp}"
     ws["D1"].fill = styles['dark_blue_fill']
-    ws["D1"].font = Font(bold=True, color='000000', size=14)
+    ws["D1"].font = Font(bold=True, color='FFFFFF', size=14)
     ws["D1"].alignment = Alignment(horizontal='left', vertical='center')
     ws.merge_cells("D1:E1")
     
@@ -77,17 +161,18 @@ def setup_excel_headers(ws, styles, machine_log_path, pcom_path, cnum_path, cps_
     username = getpass.getuser()
     ws["D2"] = f"User : {username}"
     ws["D2"].fill = styles['dark_blue_fill']
-    ws["D2"].font = Font(bold=True, color='000000', size=14)
+    ws["D2"].font = Font(bold=True, color='FFFFFF', size=14)
     ws["D2"].alignment = Alignment(horizontal='left', vertical='center')
     ws.merge_cells("D2:E2")
     
     ws.row_dimensions[1].height = 30
     
-    # Metadata labels - AIRTEL specific
+    # Metadata labels - AIRTEL specific (updated order to match metadata_values)
     pre_labels = [
         "Operator Name",
         "SOF NO", 
         "PO NO",
+        "Profile Type",
         "Circle",
         "Chip",
         "Batch No & Batch QTY",
@@ -101,7 +186,7 @@ def setup_excel_headers(ws, styles, machine_log_path, pcom_path, cnum_path, cps_
     for i, label in enumerate(pre_labels, start=4):
         label_cell = ws.cell(row=i, column=1, value=label)
         label_cell.fill = styles['dark_blue_fill']
-        label_cell.font = Font(bold=True, color='000000')
+        label_cell.font = Font(bold=True, color='FFFFFF')
         label_cell.border = styles['thick_border']
         
         # Empty value cell with border
@@ -111,7 +196,8 @@ def setup_excel_headers(ws, styles, machine_log_path, pcom_path, cnum_path, cps_
     # REMOVED: File Paths section (rows 15-19)
     
     # Start validation table immediately after metadata section
-    validation_row = 15  # Changed from 21 to 15 (after the 10 metadata rows + 1 empty row)
+    # 11 metadata rows + 1 empty row = row 15 for validation table start
+    validation_row = 15
     
     # Add an empty row for spacing
     ws.row_dimensions[validation_row].height = 10
@@ -1347,13 +1433,14 @@ def compare_generic(ml_value, external_value, comparison_type="PCOM", field_name
     return False, error_msg
 
 # ========== MAIN VALIDATION FUNCTION ==========
-def main_airtel(filepath, pcom_path=None, cnum_path=None, sim_oda_path=None, image_paths=None):
+def main_airtel(filepath, pcom_path=None, cnum_path=None, sim_oda_path=None, image_paths=None, perso_script_path=None):
     """
-    Main AIRTEL validation function - UPDATED: Includes image handling
+    Main AIRTEL validation function - UPDATED: Includes image handling and metadata extraction
     """
     print("="*80)
     print("🚀 AIRTEL VALIDATION STARTED (with 80% cps similarity check)")
     print(f"📸 Image paths received: {image_paths}")
+    print(f"📝 Perso Script: {perso_script_path}")
     print("="*80)
     
     validation_errors = []
@@ -1383,6 +1470,54 @@ def main_airtel(filepath, pcom_path=None, cnum_path=None, sim_oda_path=None, ima
         else:
             print("⚠️  cps file not provided or not found")
         
+        # ========== EXTRACT METADATA FOR EXCEL REPORT ==========
+        print("\n📊 Extracting metadata for Excel report...")
+        
+        # 1. Operator Name (constant for Airtel)
+        operator_name = "Airtel"
+        
+        # 2. SOF NO - Extract from folder name (from Machine Log filepath)
+        sof_number = extract_sof_number(os.path.dirname(filepath) if filepath else "")
+        
+        # 3. PO NO - Held/assigned value (empty for now, can be added manually)
+        po_number = ""
+        
+        # 4. Profile Type - Read from .cnum file
+        profile_type = extract_profile_from_cnum(cnum_path) if cnum_path else ""
+        
+        # 5. Circle - Extract from .cps file
+        circle_value = extract_circle_from_cps(sim_oda_path) if sim_oda_path else ""
+        
+        # 6. Chip - Held/assigned value (empty for now)
+        chip_value = ""
+        
+        # 7. Batch No and Batch QTY - Extract from .cnum file
+        batch_no, batch_qty = extract_batch_info_from_cnum(cnum_path) if cnum_path else ("", "")
+        batch_info = f"{batch_no} ({batch_qty})" if batch_no else ""
+        
+        # 8. Total QTY - Held/assigned value (empty for now)
+        total_qty = ""
+        
+        # 9. Date of Verification (DD-MM-YYYY format)
+        date_verification = datetime.today().strftime('%d-%m-%Y')
+        
+        # 10. Script used for Perso - Extract filename from perso_script_path
+        script_used = os.path.basename(perso_script_path) if perso_script_path else ""
+        
+        # 11. Final Verification Status - Will be set based on validation outcome
+        # (set after validation completes)
+        
+        print(f"   ✅ Operator: {operator_name}")
+        print(f"   ✅ SOF NO: {sof_number}")
+        print(f"   ✅ PO NO: {po_number}")
+        print(f"   ✅ Profile Type: {profile_type}")
+        print(f"   ✅ Circle: {circle_value}")
+        print(f"   ✅ Chip: {chip_value}")
+        print(f"   ✅ Batch No & Qty: {batch_info}")
+        print(f"   ✅ Total QTY: {total_qty}")
+        print(f"   ✅ Date: {date_verification}")
+        print(f"   ✅ Script: {script_used}")
+        
         # Create workbook
         wb = Workbook()
         ws = wb.active
@@ -1391,6 +1526,25 @@ def main_airtel(filepath, pcom_path=None, cnum_path=None, sim_oda_path=None, ima
         # Setup styles and headers with updated template
         styles = setup_excel_styles()
         header_row = setup_excel_headers(ws, styles, filepath, pcom_path, cnum_path, sim_oda_path)
+        
+        # ========== WRITE METADATA VALUES TO EXCEL ==========
+        # Write values to column 2 (B), rows 4-14 (11 metadata rows + status row)
+        metadata_values = [
+            operator_name,
+            sof_number,
+            po_number,
+            profile_type,
+            circle_value,
+            chip_value,
+            batch_info,
+            total_qty,
+            date_verification,
+            script_used
+        ]
+        
+        for i, value in enumerate(metadata_values, start=4):
+            ws.cell(row=i, column=2, value=value)
+            ws.cell(row=i, column=2).border = styles['thick_border']
         
         # Add image section BEFORE validation table if images are provided
         current_row = header_row
@@ -1628,6 +1782,30 @@ def main_airtel(filepath, pcom_path=None, cnum_path=None, sim_oda_path=None, ima
         # Extract SOF number from folder path for report naming
         folder_path = os.path.dirname(filepath) if filepath else ""
         sof_number = extract_sof_number(folder_path)
+        
+        # ========== WRITE FINAL VERIFICATION STATUS ==========
+        # Determine status based on validation outcome
+        if not detailed_errors:
+            final_status = "✅ Pass"
+        else:
+            # Check if there are more than acceptable errors
+            # For now, if any error exists, show fail
+            error_count = len(detailed_errors)
+            if error_count > 0:
+                final_status = f"❌ Fail ({error_count} errors)"
+            else:
+                final_status = "✅ Pass"
+        
+        # Write Final Verification Status to row 14 (after Script used for Perso)
+        # Note: script_used is written to row 13 (10th item in metadata_values), so we write status to row 14
+        ws.cell(row=14, column=2, value=final_status)
+        ws.cell(row=14, column=2).border = styles['thick_border']
+        if "❌" in final_status:
+            ws.cell(row=14, column=2).font = Font(color='FF0000', bold=True)
+        else:
+            ws.cell(row=14, column=2).font = Font(color='00B050', bold=True)
+        
+        print(f"   ✅ Final Verification Status: {final_status}")
         
         report_path = save_report(wb, filepath, pcom_path, iccid, sof_number)
         print(f"\n✅ Validation report saved: {report_path}")

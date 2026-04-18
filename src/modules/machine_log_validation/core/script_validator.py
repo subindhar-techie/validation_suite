@@ -159,9 +159,9 @@ class ScriptValidator:
         if "PPS:96SWFFFF" in line:
             return {"type": "skip", "original_line": line}
         
-        # Skip complex C02C lines
-        if 'C02C010022' in line and 'SW9000' in line:
-            return {"type": "skip", "original_line": line}
+        # # Skip complex C02C lines
+        # if 'C02C010022' in line and 'SW9000' in line:
+        #     return {"type": "skip", "original_line": line}
         
         if self.debug_mode and line_num <= 3:
             print(f"DEBUG PARSING line {line_num}: {line}")
@@ -334,9 +334,20 @@ class ScriptValidator:
             if len(out_data) >= 4:
                 sw_value = out_data[-4:]  # Last 4 chars are SW
             
+            # Extract RESULT if present
+            result_value = None
+            result_match = re.search(r'RESULT\s*[=\[]\s*([0-9A-F]+)\]?', line, re.IGNORECASE)
+            if result_match:
+                result_value = result_match.group(1).upper()
+                
+            exp_result_value = None
+            exp_result_match = re.search(r'EXPResult\s*[=\[]\s*([0-9A-F]+)\]?', line, re.IGNORECASE)
+            if exp_result_match:
+                exp_result_value = exp_result_match.group(1).upper()
+            
             # Debug output
             if self.debug_mode and line_num <= 10:
-                print(f"  Parsed IN[]OUT[] format line {line_num}: APDU={apdu_value}, OUT={out_data[:20]}..., SW={sw_value}")
+                print(f"  Parsed IN[]OUT[] format line {line_num}: APDU={apdu_value}, OUT={out_data[:20]}..., SW={sw_value}, RESULT={result_value}")
             
             return {
                 'line_num': line_num,
@@ -345,7 +356,8 @@ class ScriptValidator:
                 'sw': sw_value,
                 'out': sw_value,  # SW value for OUT field
                 'receive': receive_value,  # Full OUT data
-                'result': None,
+                'result': result_value,
+                'exp_result': exp_result_value,
                 'has_placeholder': False,
                 'type': 'apdu_command'
             }
@@ -513,21 +525,13 @@ class ScriptValidator:
         result_value = None
         exp_result_value = None
         
-        # For IN[]OUT[] format, check if OUT contains result data before SW
-        if out_value and sw_value and len(out_value) > 4:
-            # Check if OUT ends with SW
-            if out_value.endswith(sw_value):
-                result_part = out_value[:-4]  # Remove SW from end
-                if result_part:
-                    result_value = result_part
-        
-        # RESULT=041123
-        result_match = re.search(r'RESULT\s*=\s*([0-9A-F]+)', line, re.IGNORECASE)
+        # RESULT=041123 or RESULT[041123]
+        result_match = re.search(r'RESULT\s*[=\[]\s*([0-9A-F]+)\]?', line, re.IGNORECASE)
         if result_match:
             result_value = result_match.group(1).upper()
         
-        # EXPResult=041123
-        exp_result_match = re.search(r'EXPResult\s*=\s*([0-9A-F]+)', line, re.IGNORECASE)
+        # EXPResult=041123 or EXPResult[041123]
+        exp_result_match = re.search(r'EXPResult\s*[=\[]\s*([0-9A-F]+)\]?', line, re.IGNORECASE)
         if exp_result_match:
             exp_result_value = exp_result_match.group(1).upper()
         
@@ -898,40 +902,8 @@ class ScriptValidator:
             detailed_info.append(f"Checking RESULT field: {script_result_field}")
             
             if not machine_result:
-                # Check if RESULT data is in RECEIVE field (before SW)
-                if machine_receive and script_sw:
-                    clean_receive = machine_receive.replace(' ', '').replace(',', '').upper()
-                    if len(clean_receive) > 4:
-                        last_4_chars = clean_receive[-4:]
-                        if last_4_chars == script_sw:
-                            data_part = clean_receive[:-4]
-                            if data_part:
-                                self._process_and_store_field_complete(script_result_field, data_part)
-                                detailed_info.append(f"Found RESULT in RECEIVE data: {data_part}")
-                            else:
-                                errors.append(f"RESULT missing for field '{script_result_field}' - empty data in RECEIVE")
-                        else:
-                            errors.append(f"RESULT missing for field '{script_result_field}'")
-                    else:
-                        errors.append(f"RESULT missing for field '{script_result_field}'")
-                # Check if RESULT data is in OUT field (before SW)
-                elif machine_out and script_sw:
-                    clean_out = machine_out.replace(' ', '').replace(',', '').upper()
-                    if len(clean_out) > 4:
-                        last_4_chars = clean_out[-4:]
-                        if last_4_chars == script_sw:
-                            data_part = clean_out[:-4]
-                            if data_part:
-                                self._process_and_store_field_complete(script_result_field, data_part)
-                                detailed_info.append(f"Found RESULT in OUT data: {data_part}")
-                            else:
-                                errors.append(f"RESULT missing for field '{script_result_field}' - empty data in OUT")
-                        else:
-                            errors.append(f"RESULT missing for field '{script_result_field}'")
-                    else:
-                        errors.append(f"RESULT missing for field '{script_result_field}'")
-                else:
-                    errors.append(f"RESULT missing for field '{script_result_field}'")
+                errors.append(f"Explicit RESULT missing for field '{script_result_field}' in machine log")
+                detailed_info.append(f"ERROR: RESULT keyword missing in machine log")
             else:
                 # Store the extracted field value
                 self._process_and_store_field_complete(script_result_field, machine_result)
@@ -946,67 +918,14 @@ class ScriptValidator:
             detailed_info.append(f"Checking fixed RESULT: {script_expected_result}")
             
             if script_expected_result:
-                result_matched = False
-                
-                # Check machine_result first
                 if machine_result:
                     if machine_result == script_expected_result:
-                        result_matched = True
                         detailed_info.append(f"Found expected RESULT: {machine_result}")
                     else:
                         errors.append(f"RESULT mismatch: expected {script_expected_result}, got {machine_result}")
-                # Check if RESULT is in RECEIVE field (before SW)
-                elif machine_receive and script_sw:
-                    clean_receive = machine_receive.replace(' ', '').replace(',', '').upper()
-                    # Check if RECEIVE ends with the expected SW
-                    if len(clean_receive) >= 4:
-                        last_4_chars = clean_receive[-4:]
-                        if last_4_chars == script_sw:
-                            # Extract data before SW
-                            data_part = clean_receive[:-4]
-                            if data_part == script_expected_result:
-                                result_matched = True
-                                detailed_info.append(f"Found expected RESULT in RECEIVE data: {data_part}")
-                            elif data_part:
-                                errors.append(f"RESULT mismatch: expected {script_expected_result}, got {data_part} (from RECEIVE)")
-                            else:
-                                errors.append("RESULT missing in machine log")
-                        else:
-                            # Maybe the whole RECEIVE is the result (without SW)
-                            if clean_receive == script_expected_result:
-                                result_matched = True
-                                detailed_info.append(f"Found expected RESULT in RECEIVE: {clean_receive}")
-                            else:
-                                errors.append("RESULT missing in machine log")
-                    else:
-                        errors.append("RESULT missing in machine log")
-                # Check if RESULT is in OUT field (before SW)
-                elif machine_out and script_sw:
-                    clean_out = machine_out.replace(' ', '').replace(',', '').upper()
-                    # Check if OUT ends with the expected SW
-                    if len(clean_out) >= 4:
-                        last_4_chars = clean_out[-4:]
-                        if last_4_chars == script_sw:
-                            # Extract data before SW
-                            data_part = clean_out[:-4]
-                            if data_part == script_expected_result:
-                                result_matched = True
-                                detailed_info.append(f"Found expected RESULT in OUT data: {data_part}")
-                            elif data_part:
-                                errors.append(f"RESULT mismatch: expected {script_expected_result}, got {data_part} (from OUT)")
-                            else:
-                                errors.append("RESULT missing in machine log")
-                        else:
-                            # Maybe the whole OUT is the result (without SW)
-                            if clean_out == script_expected_result:
-                                result_matched = True
-                                detailed_info.append(f"Found expected RESULT in OUT: {clean_out}")
-                            else:
-                                errors.append("RESULT missing in machine log")
-                    else:
-                        errors.append("RESULT missing in machine log")
                 else:
-                    errors.append("RESULT missing in machine log")
+                    errors.append("Explicit RESULT missing in machine log")
+                    detailed_info.append("ERROR: RESULT keyword missing in machine log")
         
         # TYPE C: Command with field placeholders in APDU (00D600002AFE85410110<PSK>FE80410210<DEK1>SW9000)
         elif script_type == 'command_with_fields_sw':
@@ -1445,6 +1364,8 @@ class ScriptValidator:
                 if self.debug_mode:
                     print(f"  ✅ OPC is correct: 32 chars")
 
+
+
     def _generate_complete_validation_report(self, max_results: int = None) -> str:
         """REPORT: Generate comprehensive validation report"""
         report_lines = []
@@ -1568,13 +1489,13 @@ class ScriptValidator:
                 script_line = result.get('script_line', '')
                 if script_line:
                     if len(script_line) > 100:
-                        script_line = script_line[:100] + "..."
+                        script_line = script_line[:150000]
                     report_lines.append(f"     Script: {script_line}")
                 
                 machine_line = result.get('machine_line', '')
                 if machine_line:
                     if len(machine_line) > 100:
-                        machine_line = machine_line[:100] + "..."
+                        machine_line = machine_line[:150000]
                     report_lines.append(f"     Machine: {machine_line}")
             
             report_lines.append("")
@@ -1708,8 +1629,21 @@ class ScriptValidator:
                 for field_name, field_value in other_fields.items():
                     display = field_value
                     if len(display) > 50:
-                        display = display[:50] + "..."
+                        display = display[:250]
                     report_lines.append(f"  {field_name}: {display}")
+                    
+                    if field_name == "HOME_ACC" and "HOME_IMSI" in self.field_values:
+                        calc_acc = self.calculate_acc_from_imsi(self.field_values["HOME_IMSI"])
+                        if field_value == calc_acc:
+                            report_lines.append(f"    ✅ Matches calculated ACC ({calc_acc}) from HOME_IMSI")
+                        else:
+                            report_lines.append(f"    ❌ Mismatch: Calculated ACC from HOME_IMSI is {calc_acc}")
+                    elif field_name == "ACC" and "IMSI" in self.field_values:
+                        calc_acc = self.calculate_acc_from_imsi(self.field_values["IMSI"])
+                        if field_value == calc_acc:
+                            report_lines.append(f"    ✅ Matches calculated ACC ({calc_acc}) from IMSI")
+                        else:
+                            report_lines.append(f"    ❌ Mismatch: Calculated ACC from IMSI is {calc_acc}")
         
         # ============================================================
         # ANALYSIS
