@@ -6,6 +6,66 @@ import sys
 import time
 from datetime import datetime
 from ..theme import Theme
+import math
+
+def create_sharp_rounded_rect(canvas, x1, y1, x2, y2, r, **kwargs):
+    points = []
+    # Top-Left
+    cx, cy = x1+r, y1+r
+    for i in range(180, 270, 5):
+        points.extend([cx + r * math.cos(math.radians(i)), cy + r * math.sin(math.radians(i))])
+    # Top-Right
+    cx, cy = x2-r, y1+r
+    for i in range(270, 360, 5):
+        points.extend([cx + r * math.cos(math.radians(i)), cy + r * math.sin(math.radians(i))])
+    # Bottom-Right
+    cx, cy = x2-r, y2-r
+    for i in range(0, 90, 5):
+        points.extend([cx + r * math.cos(math.radians(i)), cy + r * math.sin(math.radians(i))])
+    # Bottom-Left
+    cx, cy = x1+r, y2-r
+    for i in range(90, 180, 5):
+        points.extend([cx + r * math.cos(math.radians(i)), cy + r * math.sin(math.radians(i))])
+    return canvas.create_polygon(points, smooth=False, **kwargs)
+
+class RoundedButton(tk.Canvas):
+    def __init__(self, parent, text, width, height, r, bg_color, fg_color, hover_bg, hover_fg, font, command, outline_color="", **kwargs):
+        super().__init__(parent, width=width, height=height, bg='white', highlightthickness=0, **kwargs)
+        self.bg_color = bg_color
+        self.fg_color = fg_color
+        self.hover_bg = hover_bg
+        self.hover_fg = hover_fg
+        self.command = command
+        
+        self.rect_id = create_sharp_rounded_rect(self, 1, 1, width-1, height-1, r, fill=bg_color, outline=outline_color)
+        
+        self.icon_poly = None
+        self.icon_line = None
+        self.text_id = self.create_text(width//2, height//2, text=text, font=font, fill=fg_color)
+            
+        self.bind("<Enter>", self.on_enter)
+        self.bind("<Leave>", self.on_leave)
+        self.bind("<ButtonRelease-1>", self.on_release)
+        
+    def on_enter(self, e):
+        self.itemconfig(self.rect_id, fill=self.hover_bg)
+        self.itemconfig(self.text_id, fill=self.hover_fg)
+        if self.icon_poly:
+            self.itemconfig(self.icon_poly, outline=self.hover_fg)
+            self.itemconfig(self.icon_line, fill=self.hover_fg)
+        self.config(cursor="hand2")
+        
+    def on_leave(self, e):
+        self.itemconfig(self.rect_id, fill=self.bg_color)
+        self.itemconfig(self.text_id, fill=self.fg_color)
+        if self.icon_poly:
+            self.itemconfig(self.icon_poly, outline=self.fg_color)
+            self.itemconfig(self.icon_line, fill=self.fg_color)
+            
+    def on_release(self, e):
+        if 0 <= e.x <= self.winfo_width() and 0 <= e.y <= self.winfo_height():
+            if self.command:
+                self.command()
 
 # Import resource_path function
 try:
@@ -164,8 +224,10 @@ class MachineLogTab:
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
         )
         if filename:
+            self.script_entry.config(state='normal')
             self.script_entry.delete(0, tk.END)
             self.script_entry.insert(0, filename)
+            self.script_entry.config(state='readonly')
 
     def browse_machine_log_file(self):
         filename = filedialog.askopenfilename(
@@ -173,8 +235,10 @@ class MachineLogTab:
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
         )
         if filename:
+            self.machine_log_entry.config(state='normal')
             self.machine_log_entry.delete(0, tk.END)
             self.machine_log_entry.insert(0, filename)
+            self.machine_log_entry.config(state='readonly')
 
     def validate_machine_log(self):
         """Main validation function with dynamic validation logic"""
@@ -259,8 +323,12 @@ class MachineLogTab:
 
     def clear_all_fields(self):
         """Clear all input fields and log output"""
+        self.script_entry.config(state='normal')
+        self.machine_log_entry.config(state='normal')
         self.script_entry.delete(0, tk.END)
         self.machine_log_entry.delete(0, tk.END)
+        self.script_entry.config(state='readonly')
+        self.machine_log_entry.config(state='readonly')
         self.log_output.delete(1.0, tk.END)
         
         # Show minimal instructions
@@ -276,224 +344,157 @@ class MachineLogTab:
     def launch_gui(self):
         # Use the parent window passed from main launcher
         self.root = self.parent
-        
-        # Initialize icon reference to prevent garbage collection
         self.window_icon = None
-        
-        # Set icon - FIXED: Store reference in instance variable
         try:
             icon_path = self.get_icon_path()
             if icon_path and os.path.exists(icon_path):
-                print(f"Loading icon from: {icon_path}")
                 img = PILImage.open(icon_path).resize((32, 32), PILImage.LANCZOS)
-                # CRITICAL: Store the icon reference in instance variable
                 self.window_icon = ImageTk.PhotoImage(img)
                 self.root.iconphoto(True, self.window_icon)
-                print("Icon loaded successfully")
-            else:
-                print(f"Icon not found at: {icon_path}")
-                # Create a simple default icon
-                try:
-                    from PIL import ImageDraw
-                    default_img = PILImage.new('RGB', (32, 32), color='#2c3e50')
-                    draw = ImageDraw.Draw(default_img)
-                    draw.rectangle([8, 8, 24, 24], fill='#3498db')
-                    self.window_icon = ImageTk.PhotoImage(default_img)
-                    self.root.iconphoto(True, self.window_icon)
-                    print("Using default icon")
-                except Exception as de:
-                    print(f"Could not create default icon: {de}")
-        except Exception as e:
-            print(f"Icon loading failed: {e}. Using default icon.")
-            # Don't crash the application if icon fails
+        except Exception:
+            pass
 
         self.root.title("Machine Log Validation Version 1.2")
-        
-        # DO NOT reset geometry - it's already centered from main_window
-        # But ensure the size is correct
         self.root.geometry("1100x750")
-        
-        # PREVENT MAXIMIZING - Set min and max size to current size
-        self.root.minsize(1100, 750)  # Minimum size = current size
-        self.root.maxsize(1100, 750)  # Maximum size = current size
-        self.root.configure(bg="#f5f6fa")
-        
-        # Make window NOT resizable (this should work now)
+        self.root.minsize(1100, 750)
+        self.root.maxsize(1100, 750)
+        self.root.configure(bg="#F4F6F9")
         self.root.resizable(False, False)
 
-        # Configure style
-        style = ttk.Style()
-        style.theme_use('clam')
+        main_frame = tk.Frame(self.root, bg='#F4F6F9')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(15, 5))
         
-        # Configure modern styles with smaller fonts
-        style.configure('Title.TLabel', font=('Arial', 14, 'bold'), background='#2c3e50', foreground='white')
-        style.configure('Header.TLabel', font=('Arial', 9, 'bold'), background='#ffffff', foreground='#2c3e50')
-        style.configure('TButton', font=('Arial', 9))
-        style.configure('Accent.TButton', background='#3498db', foreground='white')
-        style.configure('TEntry', font=('Arial', 9))
-        style.configure('TCombobox', font=('Arial', 9))
-        style.configure('TLabelframe', background='#ffffff', bordercolor='#bdc3c7')
-        style.configure('TLabelframe.Label', background='#ffffff', foreground='#2c3e50', font=('Arial', 10, 'bold'))
-
-        # Main container with reduced padding
-        main_frame = tk.Frame(self.root, bg='#f5f6fa')
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
-
-        # Header with reduced height
-        header_frame = tk.Frame(main_frame, bg='#2c3e50', height=60)
-        header_frame.pack(fill=tk.X, pady=(0, 15))
+        # --- Header Banner ---
+        header_frame = tk.Frame(main_frame, bg='#1D4ED8', height=80)
+        header_frame.pack(fill=tk.X, pady=(0, 20))
         header_frame.pack_propagate(False)
         
-        header_content = tk.Frame(header_frame, bg='#2c3e50')
-        header_content.pack(fill=tk.BOTH, padx=20, pady=12)
+        lbl_title = tk.Label(header_frame, text="💻 Machine Log Validation", font=('Segoe UI', 18, 'bold'), bg='#1D4ED8', fg='white')
+        lbl_title.pack(anchor=tk.W, padx=20, pady=(15, 0))
+        lbl_sub = tk.Label(header_frame, text="Validate machine logs against perso script", font=('Segoe UI', 10), bg='#1D4ED8', fg='#DBEAFE')
+        lbl_sub.pack(anchor=tk.W, padx=55, pady=(0, 0))
         
-        title_label = tk.Label(
-            header_content,
-            text="📊 Machine Log validation",
-            font=('Arial', 16, 'bold'),
-            bg='#2c3e50',
-            fg='#ecf0f1'
-        )
-        title_label.pack(side=tk.LEFT)
-
-        # Content area
-        content_frame = tk.Frame(main_frame, bg=Theme.BG_MAIN)
+        # --- Content Area ---
+        content_frame = tk.Frame(main_frame, bg='#F4F6F9')
         content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Left Panel (width 360) drawn via Canvas for rounded cards
+        left_panel = tk.Canvas(content_frame, bg='#F4F6F9', highlightthickness=0, width=360)
+        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 20))
+        
+        def draw_rounded_card(y_offset, height):
+            create_sharp_rounded_rect(left_panel, 2, y_offset, 356, y_offset+height, r=10, fill='white', outline='#E2E8F0')
 
-        # Left panel - Configuration with reduced width
-        left_panel = tk.Frame(content_frame, bg=Theme.BG_WHITE, relief=tk.FLAT, bd=0, width=350)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 15))
-        left_panel.pack_propagate(False)
+        # 1. File Selection Card
+        draw_rounded_card(0, 190)
+        file_content = tk.Frame(left_panel, bg='white')
+        left_panel.create_window(10, 10, window=file_content, anchor='nw', width=340)
+        
+        tk.Label(file_content, text="📁 File Selection", font=('Segoe UI', 11, 'bold'), bg='white', fg='#1E293B').pack(anchor=tk.W, padx=10, pady=(5, 15))
+        
+        # Perso Script Box
+        box1 = tk.Frame(file_content, bg='white')
+        box1.pack(fill=tk.X, padx=10, pady=(0, 15))
+        icon1 = tk.Label(box1, text="📄", font=('Segoe UI', 18), bg='#EFF6FF', fg='#3B82F6', width=3, height=1)
+        icon1.pack(side=tk.LEFT, padx=(0, 15))
+        
+        txt1_frame = tk.Frame(box1, bg='white')
+        txt1_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(txt1_frame, text="Perso Script File", font=('Segoe UI', 9, 'bold'), bg='white', fg='#1E293B').pack(anchor=tk.W)
+        self.script_entry = tk.Entry(txt1_frame, font=('Segoe UI', 9), bg='white', fg='#64748B', relief=tk.FLAT, readonlybackground="white", state='readonly')
+        self.script_entry.pack(fill=tk.X, pady=(2,0))
+        
+        btn1 = RoundedButton(box1, text="Browse", width=85, height=30, r=8, bg_color='white', fg_color='#2563EB', hover_bg='#EFF6FF', hover_fg='#1D4ED8', font=('Segoe UI', 9, 'bold'), command=self.browse_script_file, outline_color="#CBD5E1")
+        btn1.pack(side=tk.RIGHT, padx=5)
+        
+        # Machine Log Box
+        box2 = tk.Frame(file_content, bg='white')
+        box2.pack(fill=tk.X, padx=10, pady=(0, 15))
+        icon2 = tk.Label(box2, text="📄", font=('Segoe UI', 18), bg='#ECFDF5', fg='#10B981', width=3, height=1)
+        icon2.pack(side=tk.LEFT, padx=(0, 15))
+        
+        txt2_frame = tk.Frame(box2, bg='white')
+        txt2_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(txt2_frame, text="Machine Log File", font=('Segoe UI', 9, 'bold'), bg='white', fg='#1E293B').pack(anchor=tk.W)
+        self.machine_log_entry = tk.Entry(txt2_frame, font=('Segoe UI', 9), bg='white', fg='#64748B', relief=tk.FLAT, readonlybackground="white", state='readonly')
+        self.machine_log_entry.pack(fill=tk.X, pady=(2,0))
+        
+        btn2 = RoundedButton(box2, text="Browse", width=85, height=30, r=8, bg_color='white', fg_color='#2563EB', hover_bg='#EFF6FF', hover_fg='#1D4ED8', font=('Segoe UI', 9, 'bold'), command=self.browse_machine_log_file, outline_color="#CBD5E1")
+        btn2.pack(side=tk.RIGHT, padx=5)
+        
+        # 2. Validation Info Card
+        draw_rounded_card(210, 120)
+        info_content = tk.Frame(left_panel, bg='white')
+        left_panel.create_window(10, 220, window=info_content, anchor='nw', width=340)
+        tk.Label(info_content, text="ℹ️ Validation Information", font=('Segoe UI', 11, 'bold'), bg='white', fg='#1E293B').pack(anchor=tk.W, padx=10, pady=(5, 10))
+        
+        info_box = tk.Frame(info_content, bg='#F8FAFC', highlightbackground="#E2E8F0", highlightthickness=1)
+        info_box.pack(fill=tk.X, padx=10, pady=(0, 10))
+        tk.Label(info_box, text="Validation is performed internally.\nResults will be displayed after completion.", font=('Segoe UI', 9), bg='#F8FAFC', fg='#475569', justify=tk.LEFT, wraplength=300).pack(anchor=tk.W, padx=10, pady=10)
+        
+        # 3. Actions Card
+        draw_rounded_card(350, 150)
+        action_content = tk.Frame(left_panel, bg='white')
+        left_panel.create_window(10, 360, window=action_content, anchor='nw', width=340)
+        tk.Label(action_content, text="⚡ Actions", font=('Segoe UI', 11, 'bold'), bg='white', fg='#1E293B').pack(anchor=tk.W, padx=10, pady=(5, 15))
+        
+        self.validate_button = RoundedButton(action_content, text="▶ Validate First Card Log", width=320, height=36, r=8, bg_color='#2563EB', fg_color='white', hover_bg='#1D4ED8', hover_fg='white', font=('Segoe UI', 10, 'bold'), command=self.validate_machine_log)
+        self.validate_button.pack(pady=(0, 10))
+        
+        clear_btn = RoundedButton(action_content, text="🗑 Clear All Fields", width=320, height=36, r=8, bg_color='#EF4444', fg_color='white', hover_bg='#DC2626', hover_fg='white', font=('Segoe UI', 10, 'bold'), command=self.clear_all_fields)
+        clear_btn.pack(pady=(0, 10))
 
-        # Right panel - Results
-        right_panel = tk.Frame(content_frame, bg=Theme.BG_WHITE, relief=tk.FLAT, bd=0)
+        # --- RIGHT PANEL ---
+        right_panel = tk.Frame(content_frame, bg='#F4F6F9')
         right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-
-        # === LEFT PANEL - CONFIGURATION ===
-        left_content = tk.Frame(left_panel, bg=Theme.BG_WHITE, padx=20, pady=20)
-        left_content.pack(fill=tk.BOTH, expand=True)
-
-        # File Selection Frame
-        file_frame = ttk.LabelFrame(left_content, text="File Selection", padding=15)
-        file_frame.pack(fill=tk.X, pady=(0, 15))
-
-        # Perso Script File Selection
-        ttk.Label(file_frame, text="Perso Script File:", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 6))
         
-        script_frame = tk.Frame(file_frame, bg='#ffffff')
-        script_frame.pack(fill=tk.X, pady=(0, 8))
+        right_canvas = tk.Canvas(right_panel, bg='#F4F6F9', highlightthickness=0)
+        right_canvas.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
         
-        self.script_entry = ttk.Entry(script_frame)
-        self.script_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+        def on_right_resize(event):
+            w, h = event.width, event.height
+            right_canvas.delete("bg_rect")
+            create_sharp_rounded_rect(right_canvas, 2, 2, w-2, h-2, r=10, fill='white', outline='#E2E8F0', tags="bg_rect")
+            right_canvas.tag_lower("bg_rect")
+            right_canvas.coords(content_win, 10, 10)
+            right_canvas.itemconfig(content_win, width=w-20, height=h-20)
+            
+        right_canvas.bind("<Configure>", on_right_resize)
         
-        script_btn = ttk.Button(script_frame, text="Browse", command=self.browse_script_file, width=8)
-        script_btn.pack(side=tk.RIGHT)
-
-        # Machine Log File Selection
-        ttk.Label(file_frame, text="Machine Log File:", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 6))
+        results_content = tk.Frame(right_canvas, bg='white')
+        content_win = right_canvas.create_window(10, 10, window=results_content, anchor='nw')
         
-        machine_frame = tk.Frame(file_frame, bg='#ffffff')
-        machine_frame.pack(fill=tk.X)
+        results_header = tk.Frame(results_content, bg='white')
+        results_header.pack(fill=tk.X, padx=5, pady=5)
         
-        self.machine_log_entry = ttk.Entry(machine_frame)
-        self.machine_log_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+        tk.Label(results_header, text="📊 Validation Results", font=('Segoe UI', 11, 'bold'), bg='white', fg='#1E293B').pack(side=tk.LEFT)
         
-        machine_btn = ttk.Button(machine_frame, text="Browse", command=self.browse_machine_log_file, width=8)
-        machine_btn.pack(side=tk.RIGHT)
-
-        # Validation Info Frame
-        info_frame = ttk.LabelFrame(left_content, text="ℹ️ Validation Info", padding=12)
-        info_frame.pack(fill=tk.X, pady=(0, 12))
+        # Terminal area
+        term_frame = tk.Frame(results_content, bg='#111827', highlightbackground="#0F172A", highlightthickness=1)
+        term_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
         
-        info_text = "Validation is performed internally.\nResults will be displayed after completion."
+        term_header = tk.Frame(term_frame, bg='#111827')
+        term_header.pack(fill=tk.X, padx=15, pady=10)
+        tk.Label(term_header, text="Validation Log", font=('Segoe UI', 9), bg='#111827', fg='#94A3B8').pack(side=tk.LEFT)
+        tk.Label(term_header, text="● Ready", font=('Segoe UI', 9, 'bold'), bg='#111827', fg='#10B981').pack(side=tk.RIGHT)
         
-        info_label = tk.Label(
-            info_frame,
-            text=info_text,
-            font=('Arial', 9),
-            bg='#ffffff',
-            fg='#2c3e50',
-            justify=tk.LEFT,
-            anchor="w",
-            wraplength=280
-        )
-        info_label.pack(fill=tk.BOTH, expand=True)
-
-        # Actions Frame
-        action_frame = ttk.LabelFrame(left_content, text="🚀 Actions", padding=12)
-        action_frame.pack(fill=tk.X)
-
-        # Store button reference for threading
-        self.validate_button = tk.Button(
-            action_frame,
-            text="▶️ Validate First Card Log",
-            command=self.validate_machine_log,
-            font=('Arial', 10, 'bold'),
-            bg='#27ae60',
-            fg='white',
-            relief=tk.FLAT,
-            padx=15,
-            pady=10,
-            cursor='hand2'
-        )
-        self.validate_button.pack(fill=tk.X, pady=(0, 8))
-
-        # Clear Button
-        clear_btn = tk.Button(
-            action_frame,
-            text="🗑️ Clear All Fields",
-            command=self.clear_all_fields,
-            font=('Arial', 9),
-            bg='#e74c3c',
-            fg='white',
-            relief=tk.FLAT,
-            padx=15,
-            pady=8,
-            cursor='hand2'
-        )
-        clear_btn.pack(fill=tk.X)
-
-        # === RIGHT PANEL - RESULTS ===
-        right_content = tk.Frame(right_panel, bg='#ffffff')
-        right_content.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
-
-        # Results header
-        results_header = tk.Frame(right_content, bg='#34495e', height=40)
-        results_header.pack(fill=tk.X)
-        results_header.pack_propagate(False)
-
-        results_title = tk.Label(
-            results_header,
-            text="📋 Validation Results",
-            font=('Arial', 11, 'bold'),
-            bg='#34495e',
-            fg='#ecf0f1'
-        )
-        results_title.pack(side=tk.LEFT, padx=15, pady=10)
-
-        # Log Output Frame
-        log_frame = ttk.LabelFrame(right_content, text="Validation Log", padding=8)
-        log_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-
         self.log_output = scrolledtext.ScrolledText(
-            log_frame,
-            font=("Consolas", 9),
-            wrap=tk.WORD,
-            bg='#2c3e50',
-            fg='#ecf0f1',
-            insertbackground='white',
-            selectbackground='#3498db',
-            relief=tk.FLAT,
-            padx=12,
-            pady=12
+            term_frame, font=("Consolas", 10), bg='#111827', fg='#F8FAFC',
+            insertbackground='white', selectbackground='#3B82F6', relief=tk.FLAT, padx=10, pady=10
         )
         self.log_output.pack(fill=tk.BOTH, expand=True)
+        
+        self.log_output.tag_configure("success", foreground="#10B981")
+        self.log_output.tag_configure("error", foreground="#EF4444")
+        self.log_output.tag_configure("warning", foreground="#F59E0B")
+        self.log_output.tag_configure("info", foreground="#3B82F6")
 
-        # Configure text colors for better readability
-        self.log_output.tag_configure("success", foreground="#27ae60")
-        self.log_output.tag_configure("error", foreground="#e74c3c")
-        self.log_output.tag_configure("warning", foreground="#f39c12")
-        self.log_output.tag_configure("info", foreground="#3498db")
-
-        # Add initial instructions
+        # System Status Bar
+        status_bar = tk.Frame(self.root, bg='#F4F6F9', height=30)
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=(0, 10))
+        
+        tk.Label(status_bar, text="🛡 System Status: Ready", font=('Segoe UI', 9, 'bold'), bg='#F4F6F9', fg='#10B981').pack(side=tk.LEFT)
+        tk.Label(status_bar, text="All systems operational", font=('Segoe UI', 9), bg='#F4F6F9', fg='#64748B').pack(side=tk.LEFT, padx=10)
+        tk.Label(status_bar, text=f"⏱ {datetime.now().strftime('%I:%M:%S %p')}  |  Version 1.2", font=('Segoe UI', 9), bg='#F4F6F9', fg='#94A3B8').pack(side=tk.RIGHT)
+        
         self.clear_all_fields()

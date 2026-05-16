@@ -100,6 +100,48 @@ except ImportError as e:
 MNOFileComparator = MNOFileComparator  # type: ignore
 # ========== END OF ADDED SECTION ==========
 
+# Helper functions for loading chip configuration
+def _get_config_path() -> Path:
+    """Get the path to config.properties file"""
+    if getattr(sys, 'frozen', False):
+        # Running as compiled executable
+        base_dir = Path(sys.executable).parent
+        # Check in _internal directory (PyInstaller 6.x+)
+        internal_config = base_dir / "_internal" / "config.properties"
+        if internal_config.exists():
+            return internal_config
+        # Fallback to root (legacy/external config)
+        return base_dir / "config.properties"
+    else:
+        # Running as script - project root is 3 parents up from this file
+        base_dir = Path(__file__).resolve().parents[3]
+        return base_dir / "config.properties"
+
+def _load_chip_codes_from_config() -> dict:
+    """Load chip code mappings from config.properties"""
+    default_chip_codes = {
+        "SAMSUNG 340": 'Chip("S3FW9FG")',
+        "SAMSUNG 480": 'Chip("S3FW9FV")',
+        "TRANSA 380": 'Chip("TSS380A1")',
+        "SLM17800": 'Chip("SLM17ECB800B")'
+    }
+    config_path = _get_config_path()
+    if not config_path.exists():
+        return default_chip_codes
+    chip_codes = {}
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    chip_codes[key.strip()] = value.strip()
+    except Exception:
+        return default_chip_codes
+    return chip_codes if chip_codes else default_chip_codes
+
 # REST OF YOUR ORIGINAL mno_file_tab.py CODE CONTINUES HERE...
 # Make sure there are no references to project_root in the remaining code
 
@@ -295,14 +337,21 @@ class MNOFileTab:
         chip_label = ttk.Label(folder_frame, text="Chip Type:", font=('Arial', 9, 'bold'))
         chip_label.pack(anchor=tk.W, pady=(5, 5))
         
+        # Load chip types from config
+        chip_codes_config = _load_chip_codes_from_config()
+        chip_type_names = list(chip_codes_config.keys())
+        
         self.chip_type = ttk.Combobox(
             folder_frame, 
-            values=["SAMSUNG 340", "SAMSUNG 480", "TRANSA 380" , "SLM17800"],
+            values=chip_type_names,
             state="readonly",
             font=('Arial', 9)
         )
         self.chip_type.pack(fill=tk.X, pady=(0, 5))
-        self.chip_type.set("SAMSUNG 340")
+        if chip_type_names:
+            self.chip_type.set(chip_type_names[0])
+        else:
+            self.chip_type.set("")
         
         # Batch Statistics Section
         stats_frame = ttk.LabelFrame(left_content, text="Validation Statistics", padding=10)

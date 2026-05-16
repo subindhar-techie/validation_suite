@@ -121,7 +121,7 @@ def set_window_icon(root):
     icon_path = find_icon()
     if icon_path and os.path.exists(icon_path):
         try:
-            root.iconbitmap(icon_path)
+            root.iconbitmap(default=icon_path)
             print(f"SUCCESS: Icon loaded from {icon_path}")
             return True
         except Exception as e:
@@ -131,6 +131,14 @@ def set_window_icon(root):
     return False
 
 def main():
+    # Fix for Windows Taskbar Icon not showing correctly
+    try:
+        import ctypes
+        myappid = 'jio.validation.toolkit.1.0'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except Exception:
+        pass
+
     root = tk.Tk()
     
     # Set application icon

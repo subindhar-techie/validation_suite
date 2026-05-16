@@ -56,6 +56,7 @@ a = Analysis(
         ('assets', 'assets'),
         ('src/gui', 'gui'),
         ('assets/icons', 'assets/icons'),
+        ('chip_type.properties', '.'),
     ],
     hiddenimports=[
         'mno_file_validator.core.file_comparator',

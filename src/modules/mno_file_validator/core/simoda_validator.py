@@ -34,12 +34,56 @@ def _safe_open(path, mode='r', encoding='utf-8', errors='replace'):
     return open(long_path, mode, encoding=encoding, errors=errors)
 
 
+def _load_chip_codes(config_path: Path = None) -> dict:
+    """Load chip code mappings from config.properties file"""
+    default_chip_codes = {
+        "SAMSUNG 340": 'Chip("S3FW9FG")',
+        "SAMSUNG 480": 'Chip("S3FW9FV")', 
+        "TRANSA 380": 'Chip("TSS380A1")',
+        "SLM17800" : 'Chip("SLM17ECB800B")'
+    }
+    
+    if config_path is None:
+        if getattr(sys, 'frozen', False):
+            # Running as compiled executable
+            base_dir = Path(sys.executable).parent
+            # Check _internal first (PyInstaller 6.x bundles data there)
+            internal_config = base_dir / "_internal" / "config.properties"
+            if internal_config.exists():
+                config_path = internal_config
+            else:
+                config_path = base_dir / "config.properties"
+        else:
+            # Running as script - project root is 4 parents up from this file
+            base_dir = Path(__file__).resolve().parents[4]
+            config_path = base_dir / "config.properties"
+    
+    if not config_path.exists():
+        return default_chip_codes
+    
+    chip_codes = {}
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    chip_codes[key.strip()] = value.strip()
+    except Exception:
+        return default_chip_codes
+    
+    return chip_codes if chip_codes else default_chip_codes
+
+
 class SIMODAValidator(BaseValidator):
     """Handles SIMODA file validation"""
     
     def __init__(self, log_callback: Optional[Callable] = None):
         super().__init__(log_callback)
         self.chip_type = "SAMSUNG 340"
+        self.chip_codes = _load_chip_codes()
     
     def set_chip_type(self, chip_type: str):
         """Set the chip type"""
@@ -49,14 +93,7 @@ class SIMODAValidator(BaseValidator):
                            cnum_iccids: List[str], 
                            cnum_imsis: List[str]) -> ValidationResult:
         """Validate SIMODA file - FAST VERSION checking all ICCIDs/IMSIs with line numbers"""
-        chip_codes = {
-            "SAMSUNG 340": 'Chip("S3FW9FG")',
-            "SAMSUNG 480": 'Chip("S3FW9FV")', 
-            "TRANSA 380": 'Chip("TSS380A1")',
-            "SLM17800" : 'Chip("SLM17ECB800B")'
-        }
-        
-        expected_code = chip_codes.get(self.chip_type)
+        expected_code = self.chip_codes.get(self.chip_type)
         
         if not expected_code:
             return ValidationResult(False, f"Unknown chip type: {self.chip_type}", [])

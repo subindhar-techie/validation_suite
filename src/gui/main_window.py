@@ -15,6 +15,62 @@ except ImportError:
         return os.path.join(base_path, relative_path)
 
 from .theme import Theme
+import math
+
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+def rgb_to_hex(rgb):
+    return '#%02x%02x%02x' % tuple(int(c) for c in rgb)
+
+def interpolate_color(c1, c2, f):
+    rgb1 = hex_to_rgb(c1)
+    rgb2 = hex_to_rgb(c2)
+    rgb = [rgb1[i] + (rgb2[i] - rgb1[i]) * f for i in range(3)]
+    return rgb_to_hex(rgb)
+
+def create_gradient_rounded_rect(canvas, x, y, w, h, r, c1, c2):
+    lines = []
+    for i in range(w):
+        f = i / float(w)
+        color = interpolate_color(c1, c2, f)
+        dy = 0
+        if i < r:
+            dx = r - i
+            dy = r - math.sqrt(r*r - dx*dx)
+        elif i >= w - r:
+            dx = i - (w - r) + 1
+            if dx > r: dx = r
+            dy = r - math.sqrt(r*r - dx*dx)
+        line_id = canvas.create_line(x+i, y+dy, x+i, y+h-dy, fill=color)
+        lines.append(line_id)
+    return lines
+
+def create_rounded_rect(canvas, x1, y1, x2, y2, r=20, **kwargs):
+    points = []
+    # Top-Left
+    cx, cy = x1+r, y1+r
+    for i in range(180, 270, 5):
+        rad = math.radians(i)
+        points.extend([cx + r * math.cos(rad), cy + r * math.sin(rad)])
+    # Top-Right
+    cx, cy = x2-r, y1+r
+    for i in range(270, 360, 5):
+        rad = math.radians(i)
+        points.extend([cx + r * math.cos(rad), cy + r * math.sin(rad)])
+    # Bottom-Right
+    cx, cy = x2-r, y2-r
+    for i in range(0, 90, 5):
+        rad = math.radians(i)
+        points.extend([cx + r * math.cos(rad), cy + r * math.sin(rad)])
+    # Bottom-Left
+    cx, cy = x1+r, y2-r
+    for i in range(90, 180, 5):
+        rad = math.radians(i)
+        points.extend([cx + r * math.cos(rad), cy + r * math.sin(rad)])
+        
+    return canvas.create_polygon(points, smooth=False, **kwargs)
 
 class MainWindow:
     def __init__(self, root):
@@ -27,7 +83,7 @@ class MainWindow:
         try:
             icon_path = self.get_icon_path()
             if os.path.exists(icon_path):
-                self.root.iconbitmap(icon_path)
+                self.root.iconbitmap(default=icon_path)
         except Exception as e:
             print(f"Icon error: {e}")
         
@@ -81,44 +137,77 @@ class MainWindow:
             return None
     
     def create_launcher_interface(self):
-        # Main container
-        main_container = tk.Frame(self.root, bg=Theme.BG_MAIN)
-        main_container.pack(fill='both', expand=True, padx=40, pady=40)
+        # Background Canvas for Modern Design
+        self.bg_canvas = tk.Canvas(self.root, width=500, height=650, bg=Theme.BG_MAIN, highlightthickness=0)
+        self.bg_canvas.place(x=0, y=0)
         
-        # Header
-        header_frame = tk.Frame(main_container, bg=Theme.BG_MAIN)
-        header_frame.pack(fill='x', pady=(0, 30))
+        # Modern Decorative Background Shapes
+        self.bg_canvas.create_oval(-100, -50, 150, 200, fill="#E6EEFA", outline="")
+        self.bg_canvas.create_oval(350, 80, 600, 330, fill="#EEF0FD", outline="")
+        self.bg_canvas.create_oval(-50, 400, 100, 550, fill="#EEF0FD", outline="")
         
-        # Branding / Logo area would go here
+        # Header (Drawn directly on canvas for transparency)
+        header_y = 60
+        self.bg_canvas.create_text(250, header_y, text="Validation Toolkit", font=Theme.title_font(24), fill=Theme.PRIMARY)
+        self.bg_canvas.create_line(220, header_y + 25, 280, header_y + 25, fill=Theme.ACCENT, width=3, capstyle=tk.ROUND)
+        self.bg_canvas.create_text(250, header_y + 55, text="Select a tool to launch", font=Theme.text_font(11), fill=Theme.TEXT_LIGHT)
         
-        # Title
-        title_label = tk.Label(
-            header_frame,
-            text="Validation Toolkit", # Slightly more professional title
-            font=Theme.title_font(24),
-            bg=Theme.BG_MAIN,
-            fg=Theme.PRIMARY
-        )
-        title_label.pack(pady=(0, 10))
+        self.cards_data = []
         
-        # Subtitle
-        subtitle_label = tk.Label(
-            header_frame,
-            text="Select a tool to launch",
-            font=Theme.text_font(11),
-            bg=Theme.BG_MAIN,
-            fg=Theme.TEXT_LIGHT
-        )
-        subtitle_label.pack()
+        # Create tool cards directly positioned
+        self.create_tool_card("First Card Validation", "Validate text file and image", self.launch_first_card_tab, y=160)
+        self.create_tool_card("Machine Log Validation", "Validate machine logs against script", self.launch_machine_log_tab, y=275)
+        self.create_tool_card("Input/Output Validation", "Validate Input/Output files in bulk", self.launch_mno_file_tab, y=390)
         
-        # Cards container
-        cards_frame = tk.Frame(main_container, bg=Theme.BG_MAIN)
-        cards_frame.pack(fill='both', expand=True)
-        
-        # Create tool cards
-        self.create_tool_card(cards_frame, "First Card Validation", "Validate text file and image", self.launch_first_card_tab)
-        self.create_tool_card(cards_frame, "Machine Log Validation", "Validate machine logs against script", self.launch_machine_log_tab)
-        self.create_tool_card(cards_frame, "Input/Output Files Validation", "Validate Input/Output files in bulk", self.launch_mno_file_tab)
+        def on_canvas_motion(e):
+            x, y = e.x, e.y
+            cursor_set = False
+            for card in self.cards_data:
+                btn_w = card['btn_w']
+                btn_h = card['btn_h']
+                btn_x1 = card['btn_x']
+                btn_y1 = card['btn_y']
+                is_on_btn = (btn_x1 <= x <= btn_x1+btn_w) and (btn_y1 <= y <= btn_y1+btn_h)
+                is_on_card = (card['x'] <= x <= card['x']+card['w']) and (card['y'] <= y <= card['y']+card['h'])
+                
+                if is_on_card:
+                    cursor_set = True
+                    if not card['hovered']:
+                        card['hovered'] = True
+                        self.bg_canvas.itemconfig(card['id'], outline="#9B72F9", width=1.5)
+                    
+                    if is_on_btn:
+                        if not card.get('btn_hovered', False):
+                            card['btn_hovered'] = True
+                            for i, line_id in enumerate(card['btn_lines']):
+                                color = interpolate_color("#7A58E5", "#487AFF", i / float(btn_w))
+                                self.bg_canvas.itemconfig(line_id, fill=color)
+                    else:
+                        if card.get('btn_hovered', True):
+                            card['btn_hovered'] = False
+                            for i, line_id in enumerate(card['btn_lines']):
+                                color = interpolate_color("#9B72F9", "#6284FF", i / float(btn_w))
+                                self.bg_canvas.itemconfig(line_id, fill=color)
+                else:
+                    if card['hovered']:
+                        card['hovered'] = False
+                        self.bg_canvas.itemconfig(card['id'], outline="#e6e8f0", width=1)
+                        if card.get('btn_hovered', True):
+                            card['btn_hovered'] = False
+                            for i, line_id in enumerate(card['btn_lines']):
+                                color = interpolate_color("#9B72F9", "#6284FF", i / float(btn_w))
+                                self.bg_canvas.itemconfig(line_id, fill=color)
+            
+            self.bg_canvas.config(cursor="hand2" if cursor_set else "")
+                        
+        def on_canvas_click(e):
+            x, y = e.x, e.y
+            for card in self.cards_data:
+                if card['x'] <= x <= card['x']+card['w'] and card['y'] <= y <= card['y']+card['h']:
+                    card['command']()
+                    
+        self.bg_canvas.bind("<Motion>", on_canvas_motion)
+        self.bg_canvas.bind("<Button-1>", on_canvas_click)
         
         # Status bar
         self.status_frame = tk.Frame(self.root, bg=Theme.SECONDARY, height=30)
@@ -143,82 +232,66 @@ class MainWindow:
         )
         version_label.pack(side='right', padx=10, pady=5)
     
-    def create_tool_card(self, parent, title, description, command):
-        """Modern card component with hover effect"""
+    def create_tool_card(self, title, description, command, y):
+        """Modern transparent card component drawn directly on canvas"""
         
-        card_bg = Theme.BG_WHITE
+        x = 40
+        w = 420
+        h = 100
         
-        card = tk.Frame(
-            parent,
-            bg=card_bg,
-            bd=0,
-            highlightthickness=1,
-            highlightbackground="#e0e0e0" # Very subtle border
-        )
-        card.pack(fill='x', pady=10, ipady=5)
+        # Determine icon and tag based on title
+        if "First" in title:
+            icon_char = "📄"
+            tag_text = "📄 Text & Image"
+        elif "Machine" in title:
+            icon_char = "⚙️"
+            tag_text = "⚙️ Script Match"
+        else:
+            icon_char = "📁"
+            tag_text = "📁 Bulk Input"
 
-        # Inner padding frame
-        inner = tk.Frame(card, bg=card_bg)
-        inner.pack(fill='x', padx=15, pady=15)
-
-        # Left side: Text
-        text_frame = tk.Frame(inner, bg=card_bg)
-        text_frame.pack(side="left", fill="both", expand=True)
-
-        title_label = tk.Label(
-            text_frame,
-            text=title,
-            font=Theme.header_font(13),
-            bg=card_bg,
-            fg=Theme.TEXT_MAIN,
-            anchor="w"
-        )
-        title_label.pack(fill="x", anchor="w")
+        # 1. White Card Background
+        card_id = create_rounded_rect(self.bg_canvas, x, y, x+w, y+h, r=20, fill="#ffffff", outline="#e6e8f0", width=1)
         
-        desc_label = tk.Label(
-            text_frame,
-            text=description,
-            font=Theme.text_font(10),
-            bg=card_bg,
-            fg=Theme.TEXT_LIGHT,
-             anchor="w"
-        )
-        desc_label.pack(fill="x", anchor="w", pady=(2, 0))
-
-        # Right side: Button (styled as icon or arrow)
-        btn_frame = tk.Frame(inner, bg=card_bg)
-        btn_frame.pack(side="right")
-
-        launch_btn = tk.Button(
-            btn_frame,
-            text="Launch",
-            font=Theme.bold_font(10),
-            bg=Theme.ACCENT,
-            fg="white",
-            activebackground=Theme.PRIMARY,
-            activeforeground="white",
-            relief="flat",
-            padx=15,
-            pady=5,
-            cursor="hand2",
-            command=command
-        )
-        launch_btn.pack()
-
-        # Bind events for hover effect on the entire card
-        def on_enter(e):
-            card.config(highlightbackground=Theme.ACCENT)
-            
-        def on_leave(e):
-            card.config(highlightbackground="#e0e0e0")
-
-        # Bind to card and inner frames/labels to ensure smooth hover
-        for widget in [card, inner, text_frame, title_label, desc_label, btn_frame]:
-            widget.bind("<Enter>", on_enter)
-            widget.bind("<Leave>", on_leave)
-            
-            # Make clicking anywhere on the card launch the tool
-            widget.bind("<Button-1>", lambda e: command())
+        # 2. Left Icon Block
+        icon_bg = create_rounded_rect(self.bg_canvas, x+15, y+15, x+85, y+85, r=15, fill="#edf3ff", outline="")
+        icon_txt = self.bg_canvas.create_text(x+50, y+50, text=icon_char, font=("Segoe UI Emoji", 24), fill=Theme.ACCENT)
+        
+        # 3. Texts
+        title_id = self.bg_canvas.create_text(x + 105, y + 30, text=title, font=Theme.header_font(12), fill=Theme.TEXT_MAIN, anchor="w")
+        desc_id = self.bg_canvas.create_text(x + 105, y + 55, text=description, font=Theme.text_font(9), fill=Theme.TEXT_LIGHT, anchor="w")
+        
+        # 4. Tag Pill
+        tag_bg = create_rounded_rect(self.bg_canvas, x+105, y+70, x+105+90, y+90, r=10, fill="#edf3ff", outline="")
+        tag_txt = self.bg_canvas.create_text(x+150, y+80, text=tag_text, font=Theme.text_font(8), fill="#005ff8")
+        
+        # 5. Launch Button (Gradient Style)
+        btn_w = 80
+        btn_h = 34
+        btn_x1 = x + w - btn_w - 15
+        btn_y1 = y + (h - btn_h) // 2
+        
+        # Purple to blue gradient
+        btn_lines = create_gradient_rounded_rect(self.bg_canvas, btn_x1, btn_y1, btn_w, btn_h, r=8, c1="#9B72F9", c2="#6284FF")
+        btn_txt = self.bg_canvas.create_text(btn_x1 + btn_w//2, btn_y1 + btn_h//2, text="▶ Launch", font=Theme.bold_font(10), fill="#ffffff")
+        
+        card_data = {
+            'id': card_id,
+            'x': x,
+            'y': y,
+            'w': w,
+            'h': h,
+            'command': command,
+            'hovered': False,
+            'btn_x': btn_x1,
+            'btn_y': btn_y1,
+            'btn_w': btn_w,
+            'btn_h': btn_h,
+            'btn_lines': btn_lines,
+            'btn_hovered': False
+        }
+        
+        self.cards_data.append(card_data)
     
     def launch_first_card_tab(self):
         """Launch First Card Validation in new window"""

@@ -334,21 +334,27 @@ class ScriptValidator:
             if len(out_data) >= 4:
                 sw_value = out_data[-4:]  # Last 4 chars are SW
             
-            # Extract RESULT if present
+# Extract RESULT if present
+            exp_result_value = None
             result_value = None
             result_match = re.search(r'RESULT\s*[=\[]\s*([0-9A-F]+)\]?', line, re.IGNORECASE)
             if result_match:
                 result_value = result_match.group(1).upper()
-                
+            
             exp_result_value = None
             exp_result_match = re.search(r'EXPResult\s*[=\[]\s*([0-9A-F]+)\]?', line, re.IGNORECASE)
             if exp_result_match:
                 exp_result_value = exp_result_match.group(1).upper()
             
+            exp_value = None
+            exp_match = re.search(r'\bEXP\s*[=\[]\s*([0-9A-F]{3,4})\]?', line, re.IGNORECASE)
+            if exp_match:
+                exp_value = exp_match.group(1).upper()
+             
             # Debug output
             if self.debug_mode and line_num <= 10:
-                print(f"  Parsed IN[]OUT[] format line {line_num}: APDU={apdu_value}, OUT={out_data[:20]}..., SW={sw_value}, RESULT={result_value}")
-            
+                print(f"  Parsed IN[]OUT[] format line {line_num}: APDU={apdu_value}, OUT={out_data[:20]}..., SW={sw_value}, RESULT={result_value}, EXP={exp_value}")
+             
             return {
                 'line_num': line_num,
                 'original_line': line,
@@ -358,6 +364,7 @@ class ScriptValidator:
                 'receive': receive_value,  # Full OUT data
                 'result': result_value,
                 'exp_result': exp_result_value,
+                'exp': exp_value,  # Store EXP value for validation
                 'has_placeholder': False,
                 'type': 'apdu_command'
             }
@@ -888,10 +895,20 @@ class ScriptValidator:
                         else:
                             status_display.append(f"{status_type}={status_value}")
                     detailed_info.append(f"WARNING: Multiple status values differ: {', '.join(status_display)}")
+                    errors.append(f"OUT and EXP values differ: OUT={machine_sw}, EXP={machine_exp}")
             
-            # If no status values matched
+# If no status values matched
             if not matching_status and status_values_found:
                 detailed_info.append("FAIL: No status values matched expected SW")
+        
+        # ============================================================
+        # STEP 1B: Validate OUT vs EXP mismatch when script has no expected SW
+        # ============================================================
+        if not script_sw:
+            # If script doesn't specify expected SW, but machine log has both OUT and EXP that differ, it's an error
+            if machine_sw and machine_exp and machine_sw != machine_exp:
+                errors.append(f"OUT and EXP values differ: OUT={machine_sw}, EXP={machine_exp}")
+                detailed_info.append(f"FAIL: OUT and EXP mismatch with no expected SW from script")
         
         # ============================================================
         # STEP 2: HANDLE DIFFERENT COMMAND TYPES - WITH OUT FIELD SUPPORT
